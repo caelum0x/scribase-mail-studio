@@ -46,7 +46,7 @@ describe("extractForwardedHeaders", () => {
         "Authentication-Results: mx.example.com; dkim=pass",
         "ARC-Seal: i=1; a=rsa-sha256; d=example.com; b=stale",
         "DKIM-Signature: v=1; d=example.com; b=stale",
-        "X-SES-CONFIGURATION-SET: untrusted",
+        "X-Scribase-Email-ID: untrusted",
         "X-Usesend-Email-ID: spoofed",
         "From: sender@example.com",
         "To: recipient@example.com",

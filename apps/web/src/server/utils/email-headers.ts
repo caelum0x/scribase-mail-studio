@@ -35,7 +35,7 @@ const RESERVED_EMAIL_HEADERS = new Set([
 const RESERVED_EMAIL_HEADER_PREFIXES = [
   "arc-",
   "resent-",
-  "x-ses-",
+  "x-scribase-",
   "x-unsend-",
   "x-usesend-",
 ];
@@ -128,7 +128,7 @@ export function buildHeaders({
   }
 
   if (emailId) {
-    defaultHeaders["X-Usesend-Email-ID"] = emailId;
+    defaultHeaders["X-Scribase-Email-ID"] = emailId;
   }
 
   if (unsubUrl) {
@@ -146,7 +146,7 @@ export function buildHeaders({
   }
 
   if (inReplyToMessageId) {
-    const formattedMessageId = `<${inReplyToMessageId}@email.amazonses.com>`;
+    const formattedMessageId = `<${inReplyToMessageId.replace(/^<|>$/g, "")}>`;
 
     if (!sanitizedHeaderNames.has("in-reply-to")) {
       defaultHeaders["In-Reply-To"] = formattedMessageId;

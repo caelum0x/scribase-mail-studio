@@ -98,7 +98,6 @@ export type DomainPayload = {
   clickTracking: boolean;
   openTracking: boolean;
   subdomain?: string | null;
-  sesTenantId?: string | null;
   dkimStatus?: string | null;
   spfDetails?: string | null;
   dmarcAdded?: boolean | null;

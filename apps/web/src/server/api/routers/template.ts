@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { EmailRenderer } from "@usesend/email-editor/src/renderer";
 import { z } from "zod";
-import { env } from "~/env";
 import {
   teamProcedure,
   createTRPCRouter,
@@ -11,6 +10,7 @@ import {
 import { nanoid } from "~/server/nanoid";
 import {
   getDocumentUploadUrl,
+  getStoragePublicUrl,
   isStorageConfigured,
 } from "~/server/service/storage-service";
 
@@ -156,12 +156,9 @@ export const templateRouter = createTRPCRouter({
       const extension = input.name.split(".").pop();
       const randomName = `${nanoid()}.${extension}`;
 
-      const url = await getDocumentUploadUrl(
-        `${team.id}/${randomName}`,
-        input.type,
-      );
+      const url = await getDocumentUploadUrl(`${team.id}/${randomName}`);
 
-      const imageUrl = `${env.S3_COMPATIBLE_PUBLIC_URL}/${team.id}/${randomName}`;
+      const imageUrl = getStoragePublicUrl(`${team.id}/${randomName}`);
 
       return { uploadUrl: url, imageUrl };
     }),

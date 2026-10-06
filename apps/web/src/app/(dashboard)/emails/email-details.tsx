@@ -9,17 +9,17 @@ import { motion } from "framer-motion";
 import { EmailStatus } from "@prisma/client";
 import { JsonValue } from "@prisma/client/runtime/library";
 import {
-  SesBounce,
-  SesClick,
-  SesComplaint,
-  SesDeliveryDelay,
-  SesOpen,
-} from "~/types/aws-types";
+  MailBounce,
+  MailClick,
+  MailComplaint,
+  MailDeliveryDelay,
+  MailOpen,
+} from "~/types/mail-events";
 import {
   BOUNCE_ERROR_MESSAGES,
   COMPLAINT_ERROR_MESSAGES,
   DELIVERY_DELAY_ERRORS,
-} from "@usesend/lib/src/constants/ses-errors";
+} from "@usesend/lib/src/constants/delivery-errors";
 import { getEmailPreviewSrcDoc } from "~/lib/email-preview";
 import CancelEmail from "./cancel-email";
 import { useEffect } from "react";
@@ -200,12 +200,12 @@ const EmailStatusText = ({
   } else if (status === "DELIVERED") {
     return <div>Mail is successfully delivered to the recipient.</div>;
   } else if (status === "DELIVERY_DELAYED") {
-    const _errorData = data as unknown as SesDeliveryDelay;
+    const _errorData = data as unknown as MailDeliveryDelay;
     const errorMessage = DELIVERY_DELAY_ERRORS[_errorData.delayType];
 
     return <div>{errorMessage}</div>;
   } else if (status === "BOUNCED") {
-    const _errorData = data as unknown as SesBounce;
+    const _errorData = data as unknown as MailBounce;
     _errorData.bounceType;
 
     return (
@@ -233,7 +233,7 @@ const EmailStatusText = ({
     const _errorData = data as unknown as { error: string };
     return <div>{_errorData.error}</div>;
   } else if (status === "OPENED") {
-    const _data = data as unknown as SesOpen;
+    const _data = data as unknown as MailOpen;
     const userAgent = getUserAgent(_data.userAgent);
 
     return (
@@ -255,7 +255,7 @@ const EmailStatusText = ({
       </div>
     );
   } else if (status === "CLICKED") {
-    const _data = data as unknown as SesClick;
+    const _data = data as unknown as MailClick;
     const userAgent = getUserAgent(_data.userAgent);
 
     return (
@@ -281,11 +281,13 @@ const EmailStatusText = ({
       </div>
     );
   } else if (status === "COMPLAINED") {
-    const _errorData = data as unknown as SesComplaint;
+    const _errorData = data as unknown as MailComplaint;
 
     return (
       <div className="flex flex-col gap-4 w-full">
-        <p>{getComplaintMessage(_errorData.complaintFeedbackType)}</p>
+        <p>
+          {getComplaintMessage(_errorData.complaintFeedbackType ?? "abuse")}
+        </p>
       </div>
     );
   } else if (status === "CANCELLED") {
@@ -302,14 +304,11 @@ const EmailStatusText = ({
   return <div className="w-full">{status}</div>;
 };
 
-const getErrorMessage = (data: SesBounce) => {
+const getErrorMessage = (data: MailBounce) => {
   if (data.bounceType === "Permanent") {
     return BOUNCE_ERROR_MESSAGES[data.bounceType][
       data.bounceSubType as
-        | "General"
-        | "NoEmail"
-        | "Suppressed"
-        | "OnAccountSuppressionList"
+        "General" | "NoEmail" | "Suppressed" | "OnAccountSuppressionList"
     ];
   } else if (data.bounceType === "Transient") {
     return BOUNCE_ERROR_MESSAGES[data.bounceType][

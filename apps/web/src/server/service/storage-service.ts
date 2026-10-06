@@ -1,63 +1,68 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { ObjectStorageClient, models } from "oci-objectstorage";
 import { env } from "~/env";
+import { readOciConfig } from "~/server/provider/oci/config";
+import { createOciAuthProvider } from "~/server/provider/oci/factory";
 
-let S3: S3Client | null = null;
-export const DEFAULT_BUCKET = env.S3_COMPATIBLE_BUCKET || "unsend";
+/**
+ * Image uploads for the email editor, stored in OCI Object Storage.
+ * The browser uploads directly with a short-lived pre-authenticated request
+ * (PAR) scoped to a single object; images are served from STORAGE_PUBLIC_URL
+ * (a public bucket URL or a CDN in front of it).
+ */
+
+const UPLOAD_URL_TTL_MS = 60 * 60 * 1000;
+
+let client: ObjectStorageClient | null = null;
 
 export const isStorageConfigured = () =>
-  !!(
-    env.S3_COMPATIBLE_ACCESS_KEY &&
-    env.S3_COMPATIBLE_API_URL &&
-    env.S3_COMPATIBLE_PUBLIC_URL &&
-    env.S3_COMPATIBLE_SECRET_KEY
+  Boolean(
+    env.OCI_STORAGE_NAMESPACE &&
+    env.OCI_STORAGE_BUCKET &&
+    env.STORAGE_PUBLIC_URL &&
+    createOciAuthProvider(readOciConfig(env)),
   );
 
 const getClient = () => {
-  if (
-    !S3 &&
-    env.S3_COMPATIBLE_ACCESS_KEY &&
-    env.S3_COMPATIBLE_API_URL &&
-    env.S3_COMPATIBLE_PUBLIC_URL &&
-    env.S3_COMPATIBLE_SECRET_KEY
-  ) {
-    S3 = new S3Client({
-      region: "auto",
-      endpoint: env.S3_COMPATIBLE_API_URL,
-      credentials: {
-        accessKeyId: env.S3_COMPATIBLE_ACCESS_KEY,
-        secretAccessKey: env.S3_COMPATIBLE_SECRET_KEY,
-      },
-      forcePathStyle: true, // needed for minio
-    });
+  if (client) {
+    return client;
   }
 
-  return S3;
+  const config = readOciConfig(env);
+  const authenticationDetailsProvider = createOciAuthProvider(config);
+  if (!authenticationDetailsProvider) {
+    return null;
+  }
+
+  client = new ObjectStorageClient({ authenticationDetailsProvider });
+  client.regionId = config.region;
+  return client;
 };
 
-export const getDocumentUploadUrl = async (
-  key: string,
-  fileType: string,
-  bucket: string = DEFAULT_BUCKET
-) => {
-  const s3Client = getClient();
+export function getStoragePublicUrl(key: string) {
+  return `${(env.STORAGE_PUBLIC_URL ?? "").replace(/\/+$/, "")}/${key}`;
+}
 
-  if (!s3Client) {
-    throw new Error("R2 is not configured");
+export const getDocumentUploadUrl = async (key: string) => {
+  const storage = getClient();
+
+  if (!storage || !env.OCI_STORAGE_NAMESPACE || !env.OCI_STORAGE_BUCKET) {
+    throw new Error("Object storage is not configured");
   }
 
-  const url = await getSignedUrl(
-    s3Client,
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ContentType: fileType,
-    }),
-    {
-      expiresIn: 3600,
-      signableHeaders: new Set(["content-type"]),
-    }
-  );
+  const response = await storage.createPreauthenticatedRequest({
+    namespaceName: env.OCI_STORAGE_NAMESPACE,
+    bucketName: env.OCI_STORAGE_BUCKET,
+    createPreauthenticatedRequestDetails: {
+      name: `upload-${key.replace(/[^a-zA-Z0-9-]/g, "-")}`.slice(0, 120),
+      objectName: key,
+      accessType:
+        models.CreatePreauthenticatedRequestDetails.AccessType.ObjectWrite,
+      timeExpires: new Date(Date.now() + UPLOAD_URL_TTL_MS),
+    },
+  });
 
-  return url;
+  const accessUri = response.preauthenticatedRequest.accessUri;
+  return accessUri.startsWith("http")
+    ? accessUri
+    : `https://objectstorage.${readOciConfig(env).region}.oraclecloud.com${accessUri}`;
 };

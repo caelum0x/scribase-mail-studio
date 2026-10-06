@@ -2,11 +2,16 @@ import { Queue, Worker } from "bullmq";
 import { env } from "~/env";
 import { EmailAttachment } from "~/types";
 import { convert as htmlToText } from "html-to-text";
-import { getConfigurationSetName } from "~/utils/ses-utils";
 import { db } from "../db";
-import { sendRawEmail } from "../aws/ses";
+import { getEmailProvider, getProviderRegion } from "../provider";
+import { ProviderSendError } from "../provider/types";
+import { extractEmailAddress } from "../provider/oci/mappers";
 import { getRedis, BULL_PREFIX } from "../redis";
 import { DEFAULT_QUEUE_OPTIONS } from "../queue/queue-constants";
+import { buildHeaders } from "../utils/email-headers";
+import { applyTracking } from "../utils/email-tracking";
+import { getTrackingSecret } from "../utils/tracking-secret";
+import { processEmailEvent } from "./email-event-service";
 import { logger } from "../logger/log";
 import { createWorkerHandler, TeamJob } from "../queue/bullmq-context";
 import { LimitService } from "./limit-service";
@@ -15,6 +20,13 @@ import {
   replaceContactVariables,
 } from "../utils/contact-variable-replacement";
 // Notifications about limits are handled inside LimitService.
+
+/** Transient SMTP failures (4xx, connection errors) are retried by BullMQ. */
+export const EMAIL_JOB_OPTIONS = {
+  ...DEFAULT_QUEUE_OPTIONS,
+  attempts: 4,
+  backoff: { type: "exponential" as const, delay: 30_000 },
+};
 
 type QueueEmailJob = TeamJob<{
   emailId: string;
@@ -28,7 +40,11 @@ function createQueueAndWorker(region: string, quota: number, suffix: string) {
 
   const queueName = `${region}-${suffix}`;
 
-  const queue = new Queue(queueName, { connection, prefix: BULL_PREFIX, skipVersionCheck: true });
+  const queue = new Queue(queueName, {
+    connection,
+    prefix: BULL_PREFIX,
+    skipVersionCheck: true,
+  });
 
   // TODO: Add team context to job data when queueing
   const worker = new Worker(queueName, createWorkerHandler(executeEmail), {
@@ -51,22 +67,22 @@ export class EmailQueueService {
   public static initializeQueue(
     region: string,
     quota: number,
-    transactionalQuotaPercentage: number
+    transactionalQuotaPercentage: number,
   ) {
     logger.info(
       { region },
-      `[EmailQueueService]: Initializing queue for region`
+      `[EmailQueueService]: Initializing queue for region`,
     );
 
     const transactionalQuota = Math.floor(
-      (quota * transactionalQuotaPercentage) / 100
+      (quota * transactionalQuotaPercentage) / 100,
     );
     const marketingQuota = quota - transactionalQuota;
 
     if (this.transactionalQueue.has(region)) {
       logger.info(
         { region, transactionalQuota },
-        `[EmailQueueService]: Updating transactional quota for region`
+        `[EmailQueueService]: Updating transactional quota for region`,
       );
       const transactionalWorker = this.transactionalWorker.get(region);
       if (transactionalWorker) {
@@ -76,13 +92,13 @@ export class EmailQueueService {
     } else {
       logger.info(
         { region, transactionalQuota },
-        `[EmailQueueService]: Creating transactional queue for region`
+        `[EmailQueueService]: Creating transactional queue for region`,
       );
       const { queue: transactionalQueue, worker: transactionalWorker } =
         createQueueAndWorker(
           region,
           transactionalQuota !== 0 ? transactionalQuota : 1,
-          "transaction"
+          "transaction",
         );
       this.transactionalQueue.set(region, transactionalQueue);
       this.transactionalWorker.set(region, transactionalWorker);
@@ -91,7 +107,7 @@ export class EmailQueueService {
     if (this.marketingQueue.has(region)) {
       logger.info(
         { region, marketingQuota },
-        `[EmailQueueService]: Updating marketing quota for region`
+        `[EmailQueueService]: Updating marketing quota for region`,
       );
       const marketingWorker = this.marketingWorker.get(region);
       if (marketingWorker) {
@@ -100,13 +116,13 @@ export class EmailQueueService {
     } else {
       logger.info(
         { region, marketingQuota },
-        `[EmailQueueService]: Creating marketing queue for region`
+        `[EmailQueueService]: Creating marketing queue for region`,
       );
       const { queue: marketingQueue, worker: marketingWorker } =
         createQueueAndWorker(
           region,
           marketingQuota !== 0 ? marketingQuota : 1,
-          "marketing"
+          "marketing",
         );
       this.marketingQueue.set(region, marketingQueue);
       this.marketingWorker.set(region, marketingWorker);
@@ -119,7 +135,7 @@ export class EmailQueueService {
     region: string,
     transactional: boolean,
     unsubUrl?: string,
-    delay?: number
+    delay?: number,
   ) {
     if (!this.initialized) {
       await this.init();
@@ -140,7 +156,7 @@ export class EmailQueueService {
         isBulk,
         teamId,
       },
-      { jobId: emailId, delay, ...DEFAULT_QUEUE_OPTIONS }
+      { jobId: emailId, delay, ...EMAIL_JOB_OPTIONS },
     );
   }
 
@@ -160,7 +176,7 @@ export class EmailQueueService {
       unsubUrl?: string;
       delay?: number;
       timestamp?: number; // Optional: pass timestamp if needed for data
-    }[]
+    }[],
   ): Promise<void> {
     if (jobs.length === 0) {
       logger.info("[EmailQueueService]: No jobs provided for bulk queue.");
@@ -173,7 +189,7 @@ export class EmailQueueService {
 
     logger.info(
       { count: jobs.length },
-      `[EmailQueueService]: Starting bulk queue for jobs.`
+      `[EmailQueueService]: Starting bulk queue for jobs.`,
     );
 
     // Group jobs by region and type
@@ -201,7 +217,7 @@ export class EmailQueueService {
           transactional: boolean;
           jobDetails: typeof jobs;
         }
-      >
+      >,
     );
 
     const bulkAddPromises: Promise<any>[] = [];
@@ -211,7 +227,7 @@ export class EmailQueueService {
       if (!group || !group.queue) {
         logger.error(
           { groupKey, count: group?.jobDetails?.length ?? 0 },
-          `[EmailQueueService]: Queue not found for group during bulk add. Skipping jobs.`
+          `[EmailQueueService]: Queue not found for group during bulk add. Skipping jobs.`,
         );
         // Optionally: handle these skipped jobs (e.g., mark corresponding emails as failed)
         continue;
@@ -231,28 +247,28 @@ export class EmailQueueService {
         opts: {
           jobId: job.emailId, // Use emailId as jobId
           delay: job.delay,
-          ...DEFAULT_QUEUE_OPTIONS, // Apply default options (attempts, backoff)
+          ...EMAIL_JOB_OPTIONS, // Apply default options (attempts, backoff)
         },
       }));
 
       logger.info(
         { count: bulkData.length, queue: queue.name },
-        `[EmailQueueService]: Adding jobs to queue`
+        `[EmailQueueService]: Adding jobs to queue`,
       );
       bulkAddPromises.push(
         queue.addBulk(bulkData).catch((error) => {
           logger.error(
             { err: error, queue: queue.name },
-            `[EmailQueueService]: Failed to add bulk jobs to queue`
+            `[EmailQueueService]: Failed to add bulk jobs to queue`,
           );
           // Optionally: handle bulk add failure (e.g., mark corresponding emails as failed)
-        })
+        }),
       );
     }
 
     await Promise.allSettled(bulkAddPromises);
     logger.info(
-      "[EmailQueueService]: Finished processing bulk queue requests."
+      "[EmailQueueService]: Finished processing bulk queue requests.",
     );
   }
 
@@ -260,7 +276,7 @@ export class EmailQueueService {
     emailId: string,
     region: string,
     transactional: boolean,
-    delay: number
+    delay: number,
   ) {
     if (!this.initialized) {
       await this.init();
@@ -282,7 +298,7 @@ export class EmailQueueService {
   public static async chancelEmail(
     emailId: string,
     region: string,
-    transactional: boolean
+    transactional: boolean,
   ) {
     if (!this.initialized) {
       await this.init();
@@ -302,22 +318,28 @@ export class EmailQueueService {
   }
 
   public static async init() {
-    const sesSettings = await db.sesSetting.findMany();
-    for (const sesSetting of sesSettings) {
+    const region = getProviderRegion();
+    await db.providerSetting.upsert({
+      where: { region },
+      create: { region, provider: "oci" },
+      update: {},
+    });
+    const settings = await db.providerSetting.findMany();
+    for (const setting of settings) {
       this.initializeQueue(
-        sesSetting.region,
-        sesSetting.sesEmailRateLimit,
-        sesSetting.transactionalQuota
+        setting.region,
+        setting.sendRateLimit,
+        setting.transactionalQuota,
       );
     }
     this.initialized = true;
   }
 }
 
-async function executeEmail(job: QueueEmailJob) {
+export async function executeEmail(job: QueueEmailJob) {
   logger.info(
     { emailId: job.data.emailId, elapsed: Date.now() - job.data.timestamp },
-    `[EmailQueueService]: Executing email job`
+    `[EmailQueueService]: Executing email job`,
   );
 
   const email = await db.email.findUnique({
@@ -333,7 +355,7 @@ async function executeEmail(job: QueueEmailJob) {
   if (!email) {
     logger.info(
       { emailId: job.data.emailId },
-      `[EmailQueueService]: Email not found, skipping`
+      `[EmailQueueService]: Email not found, skipping`,
     );
     return;
   }
@@ -343,16 +365,6 @@ async function executeEmail(job: QueueEmailJob) {
     : [];
 
   logger.info({ domain }, `Domain`);
-
-  const configurationSetName = await getConfigurationSetName(
-    domain?.clickTracking ?? false,
-    domain?.openTracking ?? false,
-    domain?.region ?? env.AWS_DEFAULT_REGION
-  );
-
-  if (!configurationSetName) {
-    return;
-  }
 
   logger.info({ emailId: email.id }, `[EmailQueueService]: Sending email`);
   const unsubUrl = job.data.unsubUrl;
@@ -399,8 +411,8 @@ async function executeEmail(job: QueueEmailJob) {
       },
     });
 
-    if (replyEmail && replyEmail.sesEmailId) {
-      inReplyToMessageId = replyEmail.sesEmailId;
+    if (replyEmail && replyEmail.providerMessageId) {
+      inReplyToMessageId = replyEmail.providerMessageId;
     }
   }
 
@@ -429,8 +441,22 @@ async function executeEmail(job: QueueEmailJob) {
     }
 
     const customHeaders = email.headers ? JSON.parse(email.headers) : undefined;
+    const provider = getEmailProvider();
+    const messageId = buildMessageId(email.id, email.from);
 
-    const messageId = await sendRawEmail({
+    await provider.ensureApprovedSender(email.from);
+
+    const html = email.html
+      ? applyTracking(email.html, {
+          emailId: email.id,
+          baseUrl: env.NEXTAUTH_URL,
+          secret: getTrackingSecret(),
+          open: domain?.openTracking ?? false,
+          click: domain?.clickTracking ?? false,
+        })
+      : undefined;
+
+    const result = await provider.sendRawEmail({
       to: email.to,
       from: email.from,
       subject,
@@ -438,35 +464,50 @@ async function executeEmail(job: QueueEmailJob) {
       bcc: email.bcc,
       cc: email.cc,
       text,
-      html: email.html ?? undefined,
-      region: domain?.region ?? env.AWS_DEFAULT_REGION,
-      configurationSetName,
+      html,
       attachments: attachments.length > 0 ? attachments : undefined,
-      unsubUrl,
-      isBulk,
-      inReplyToMessageId,
-      emailId: email.id,
-      sesTenantId: domain?.sesTenantId,
-      headers: customHeaders,
+      messageId,
+      headers: buildHeaders({
+        emailId: email.id,
+        headers: customHeaders,
+        unsubUrl,
+        isBulk,
+        inReplyToMessageId,
+      }),
     });
 
     logger.info(
-      { emailId: email.id, sesEmailId: messageId },
-      `[EmailQueueService]: Email sent`
+      { emailId: email.id, providerMessageId: result.messageId },
+      `[EmailQueueService]: Email accepted by relay`,
     );
 
-    // Delete attachments and headers after sending the email
-    await db.email.update({
-      where: { id: email.id },
-      data: { sesEmailId: messageId, text, attachments: null, headers: null },
-    });
-  } catch (error: any) {
+    await recordAcceptedEmail(email, result, text);
+  } catch (error: unknown) {
+    const maxAttempts = job.opts?.attempts ?? 1;
+    const isLastAttempt = (job.attemptsMade ?? 0) + 1 >= maxAttempts;
+    if (
+      error instanceof ProviderSendError &&
+      error.retryable &&
+      !isLastAttempt
+    ) {
+      logger.warn(
+        { emailId: email.id, err: error, attemptsMade: job.attemptsMade },
+        `[EmailQueueService]: Transient send failure, will retry`,
+      );
+      throw error;
+    }
+
+    logger.error(
+      { emailId: email.id, err: error },
+      `[EmailQueueService]: Failed to send email`,
+    );
+
     await db.emailEvent.create({
       data: {
         emailId: email.id,
         status: "FAILED",
         data: {
-          error: error.toString(),
+          error: error instanceof Error ? error.message : String(error),
         },
         teamId: email.teamId,
       },
@@ -475,5 +516,61 @@ async function executeEmail(job: QueueEmailJob) {
       where: { id: email.id },
       data: { latestStatus: "FAILED" },
     });
+  }
+}
+
+/** RFC 5322 Message-ID (without brackets) on the sender's domain. */
+export function buildMessageId(emailId: string, from: string) {
+  const domain = extractEmailAddress(from).split("@")[1] || "scribase.mail";
+  return `${emailId}@${domain}`;
+}
+
+async function recordAcceptedEmail(
+  email: {
+    id: string;
+    from: string;
+    to: string[];
+    cc: string[];
+    bcc: string[];
+  },
+  result: { messageId: string; response?: string; accepted: string[] },
+  text: string | undefined,
+) {
+  // The message is already with the relay; bookkeeping failures must not mark
+  // it FAILED or trigger a resend.
+  try {
+    // Delete attachments and headers after sending the email
+    await db.email.update({
+      where: { id: email.id },
+      data: {
+        providerMessageId: result.messageId,
+        text,
+        attachments: null,
+        headers: null,
+      },
+    });
+
+    // The relay accepted the message: record the SENT event (status, usage,
+    // webhooks) through the shared event pipeline.
+    await processEmailEvent({
+      eventType: "Send",
+      mail: {
+        timestamp: new Date().toISOString(),
+        emailId: email.id,
+        messageId: result.messageId,
+        source: email.from,
+        destination: [...email.to, ...email.cc, ...email.bcc],
+      },
+      send: {
+        timestamp: new Date().toISOString(),
+        smtpResponse: result.response,
+        recipients: result.accepted,
+      },
+    });
+  } catch (error) {
+    logger.error(
+      { emailId: email.id, err: error },
+      `[EmailQueueService]: Email sent but recording the SENT event failed`,
+    );
   }
 }

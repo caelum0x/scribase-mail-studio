@@ -13,7 +13,10 @@ const route = createRoute({
         "application/json": {
           schema: z.object({
             name: z.string(),
-            region: z.string(),
+            region: z.string().optional().openapi({
+              description: "Provider region. Defaults to the server region.",
+              example: "eu-frankfurt-1",
+            }),
           }),
         },
       },
@@ -35,12 +38,7 @@ function createDomain(app: PublicAPIApp) {
   app.openapi(route, async (c) => {
     const team = c.var.team;
     const body = c.req.valid("json");
-    const response = await createDomainService(
-      team.id,
-      body.name,
-      body.region,
-      team.sesTenantId ?? undefined
-    );
+    const response = await createDomainService(team.id, body.name, body.region);
 
     return c.json(response);
   });

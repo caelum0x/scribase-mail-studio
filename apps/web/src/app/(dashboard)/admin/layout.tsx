@@ -12,13 +12,9 @@ export default function AdminLayout({
     <div>
       <h1 className="text-lg font-bold">Admin</h1>
       <div className="mt-4 flex gap-4">
-        <SettingsNavButton href="/admin">
-          SES Configurations
-        </SettingsNavButton>
+        <SettingsNavButton href="/admin">Email provider</SettingsNavButton>
         {isCloud() ? (
-          <SettingsNavButton href="/admin/teams">
-            Teams
-          </SettingsNavButton>
+          <SettingsNavButton href="/admin/teams">Teams</SettingsNavButton>
         ) : null}
         {isCloud() ? (
           <SettingsNavButton href="/admin/email-analytics">
@@ -26,9 +22,7 @@ export default function AdminLayout({
           </SettingsNavButton>
         ) : null}
         {isCloud() ? (
-          <SettingsNavButton href="/admin/waitlist">
-            Waitlist
-          </SettingsNavButton>
+          <SettingsNavButton href="/admin/waitlist">Waitlist</SettingsNavButton>
         ) : null}
       </div>
       <div className="mt-8">{children}</div>

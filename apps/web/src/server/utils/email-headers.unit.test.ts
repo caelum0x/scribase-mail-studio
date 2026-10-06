@@ -11,7 +11,7 @@ describe("email header sanitization", () => {
     expect(sanitizeHeader("Content-Type", "text/html")).toBeUndefined();
     expect(sanitizeHeader("DKIM-Signature", "v=1; stale")).toBeUndefined();
     expect(sanitizeHeader("ARC-Seal", "i=1; stale")).toBeUndefined();
-    expect(sanitizeHeader("X-SES-CONFIGURATION-SET", "other")).toBeUndefined();
+    expect(sanitizeHeader("X-Scribase-Email-ID", "other")).toBeUndefined();
     expect(sanitizeHeader("X-Test", "ok\r\nInjected: true")).toBeUndefined();
     expect(sanitizeHeader(123, "ok")).toBeUndefined();
   });
@@ -35,10 +35,19 @@ describe("email header sanitization", () => {
       isBulk: true,
     });
 
-    expect(headers["X-Usesend-Email-ID"]).toBe("em_1");
+    expect(headers["X-Scribase-Email-ID"]).toBe("em_1");
     expect(headers["X-Custom-Trace"]).toBe("trace-1");
     expect(headers["List-Unsubscribe"]).toBe("<https://example.com/unsub>");
     expect(headers["Precedence"]).toBe("bulk");
     expect(headers["X-Entity-Ref-ID"]).toBeTypeOf("string");
+  });
+
+  it("threads replies with the stored Message-ID", () => {
+    const headers = buildHeaders({
+      inReplyToMessageId: "em_0@mail.example.com",
+    });
+
+    expect(headers["In-Reply-To"]).toBe("<em_0@mail.example.com>");
+    expect(headers["References"]).toBe("<em_0@mail.example.com>");
   });
 });

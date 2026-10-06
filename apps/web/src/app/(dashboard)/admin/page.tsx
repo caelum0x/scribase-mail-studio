@@ -1,16 +1,20 @@
 "use client";
 
-import AddSesConfiguration from "./add-ses-configuration";
-import SesConfigurations from "./ses-configurations";
+import ProviderStatusCard from "./provider-status";
+import ProviderSendingSettings from "./provider-sending-settings";
 
-export default function AdminSesPage() {
+export default function AdminEmailProviderPage() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">SES Configurations</h2>
-        <AddSesConfiguration />
+      <div>
+        <h2 className="text-xl font-semibold">Email provider</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Scribase Mail sends through Oracle Cloud Email Delivery. Credentials
+          come from the server environment.
+        </p>
       </div>
-      <SesConfigurations />
+      <ProviderStatusCard />
+      <ProviderSendingSettings />
     </div>
   );
 }

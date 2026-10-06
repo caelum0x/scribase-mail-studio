@@ -1,7 +1,7 @@
 import type { Domain, DomainStatus } from "@prisma/client";
 
 export type DomainDnsRecord = {
-  type: "MX" | "TXT";
+  type: "CNAME" | "TXT" | "MX";
   name: string;
   value: string;
   ttl: string;

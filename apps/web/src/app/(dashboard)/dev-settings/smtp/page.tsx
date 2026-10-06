@@ -12,8 +12,8 @@ import { env } from "~/env";
 export const dynamic = "force-dynamic";
 
 export default function ExampleCard() {
-  const host = env.SMTP_HOST;
-  const user = env.SMTP_USER;
+  const host = env.SMTP_PUBLIC_HOST;
+  const user = env.SMTP_PUBLIC_USER;
 
   return (
     <Card className="mt-9 max-w-xl">

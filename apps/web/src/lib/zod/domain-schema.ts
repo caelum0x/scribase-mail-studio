@@ -4,22 +4,16 @@ import { z } from "zod";
 export const DomainStatusSchema = z.nativeEnum(DomainStatus);
 
 export const DomainDnsRecordSchema = z.object({
-  type: z.enum(["MX", "TXT"]).openapi({
+  type: z.enum(["CNAME", "TXT", "MX"]).openapi({
     description: "DNS record type",
     example: "TXT",
   }),
-  name: z
-    .string()
-    .openapi({ description: "DNS record name", example: "mail" }),
-  value: z
-    .string()
-    .openapi({
-      description: "DNS record value",
-      example: "v=spf1 include:amazonses.com ~all",
-    }),
-  ttl: z
-    .string()
-    .openapi({ description: "DNS record TTL", example: "Auto" }),
+  name: z.string().openapi({ description: "DNS record name", example: "mail" }),
+  value: z.string().openapi({
+    description: "DNS record value",
+    example: "v=spf1 include:rp.oracleemaildelivery.com ~all",
+  }),
+  ttl: z.string().openapi({ description: "DNS record TTL", example: "Auto" }),
   priority: z
     .string()
     .nullish()
@@ -38,10 +32,10 @@ export const DomainSchema = z.object({
     .openapi({ description: "The name of the domain", example: "example.com" }),
   teamId: z.number().openapi({ description: "The ID of the team", example: 1 }),
   status: DomainStatusSchema,
-  region: z.string().default("us-east-1"),
+  region: z.string().default("eu-frankfurt-1"),
   clickTracking: z.boolean().default(false),
   openTracking: z.boolean().default(false),
-  publicKey: z.string(),
+  dkimSelector: z.string().optional().nullish(),
   dkimStatus: z.string().optional().nullish(),
   spfDetails: z.string().optional().nullish(),
   createdAt: z.string(),

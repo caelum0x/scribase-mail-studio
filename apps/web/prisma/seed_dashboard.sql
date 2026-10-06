@@ -12,11 +12,11 @@ VALUES ('Acme Inc', 'BASIC'::"Plan", TRUE, 10, NOW(), NOW());
 -- 2) Ensure a verified domain for that team (upsert by unique name)
 INSERT INTO "Domain" (
   "name", "teamId", "status", "region", "clickTracking", "openTracking",
-  "publicKey", "dkimSelector", "dmarcAdded", "createdAt", "updatedAt"
+  "dkimSelector", "dkimRecordName", "dkimRecordValue", "dmarcAdded", "createdAt", "updatedAt"
 )
 SELECT
-  'mail.acme.test', id, 'SUCCESS'::"DomainStatus", 'us-east-1', TRUE, TRUE,
-  'PUBLIC_KEY_SAMPLE', 'usesend', TRUE, NOW(), NOW()
+  'mail.acme.test', id, 'SUCCESS'::"DomainStatus", 'eu-frankfurt-1', TRUE, TRUE,
+  'scribase', 'scribase._domainkey.mail.acme.test', 'scribase.mail.acme.test.dkim.fra1.oracleemaildelivery.com', TRUE, NOW(), NOW()
 FROM "Team"
 WHERE "name" = 'Acme Inc'
 ORDER BY id DESC
@@ -207,7 +207,7 @@ BEGIN
 
   -- delivered/opened
   INSERT INTO "Email" (
-    id, "sesEmailId", "from", "to", "replyTo", cc, bcc, subject, text, html,
+    id, "providerMessageId", "from", "to", "replyTo", cc, bcc, subject, text, html,
     "latestStatus", "teamId", "domainId", "createdAt", "updatedAt"
   ) VALUES (
     ('eml_' || substr(md5(random()::text), 1, 12)), NULL,
@@ -218,7 +218,7 @@ BEGIN
 
   -- clicked
   INSERT INTO "Email" (
-    id, "sesEmailId", "from", "to", "replyTo", cc, bcc, subject, text, html,
+    id, "providerMessageId", "from", "to", "replyTo", cc, bcc, subject, text, html,
     "latestStatus", "teamId", "domainId", "createdAt", "updatedAt"
   ) VALUES (
     ('eml_' || substr(md5(random()::text), 1, 12)), NULL,
@@ -229,7 +229,7 @@ BEGIN
 
   -- bounced
   INSERT INTO "Email" (
-    id, "sesEmailId", "from", "to", "replyTo", cc, bcc, subject, text, html,
+    id, "providerMessageId", "from", "to", "replyTo", cc, bcc, subject, text, html,
     "latestStatus", "teamId", "domainId", "createdAt", "updatedAt"
   ) VALUES (
     ('eml_' || substr(md5(random()::text), 1, 12)), NULL,
@@ -240,7 +240,7 @@ BEGIN
 
   -- complained
   INSERT INTO "Email" (
-    id, "sesEmailId", "from", "to", "replyTo", cc, bcc, subject, text, html,
+    id, "providerMessageId", "from", "to", "replyTo", cc, bcc, subject, text, html,
     "latestStatus", "teamId", "domainId", "createdAt", "updatedAt"
   ) VALUES (
     ('eml_' || substr(md5(random()::text), 1, 12)), NULL,

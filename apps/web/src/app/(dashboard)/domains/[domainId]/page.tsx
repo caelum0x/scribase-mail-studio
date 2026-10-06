@@ -24,6 +24,7 @@ import React, { use } from "react";
 import { Switch } from "@usesend/ui/src/switch";
 import DeleteDomain from "./delete-domain";
 import SendTestMail from "./send-test-mail";
+import ApprovedSenders from "./approved-senders";
 import { Button } from "@usesend/ui/src/button";
 import Link from "next/link";
 import { toast } from "@usesend/ui/src/toaster";
@@ -154,7 +155,9 @@ export default function DomainItemPage({
                         />
                       </TableCell>
                       <TableCell className="">{record.ttl}</TableCell>
-                      <TableCell className="">{record.priority ?? ""}</TableCell>
+                      <TableCell className="">
+                        {record.priority ?? ""}
+                      </TableCell>
                       <TableCell className="">
                         <DnsVerificationStatus status={record.status} />
                       </TableCell>
@@ -164,6 +167,13 @@ export default function DomainItemPage({
               </TableBody>
             </Table>
           </div>
+          {domainQuery.data ? (
+            <ApprovedSenders
+              domainId={domainQuery.data.id}
+              domainName={domainQuery.data.name}
+              verified={domainQuery.data.status === DomainStatus.SUCCESS}
+            />
+          ) : null}
           {domainQuery.data ? (
             <DomainSettings domain={domainQuery.data} />
           ) : null}
@@ -225,9 +235,9 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
       <div className="flex flex-col gap-1">
         <div className="font-semibold">Open tracking</div>
         <p className=" text-muted-foreground text-sm">
-          Unsend adds a tracking pixel to every email you send. This allows you
-          to see how many people open your emails. This will affect the delivery
-          rate of your emails.
+          Scribase Mail adds a tracking pixel to every email you send. This
+          allows you to see how many people open your emails. This can affect
+          the delivery rate of your emails.
         </p>
         <Switch
           checked={openTracking}
@@ -248,7 +258,9 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
   );
 };
 
-const DnsVerificationStatus: React.FC<{ status: DomainStatus }> = ({ status }) => {
+const DnsVerificationStatus: React.FC<{ status: DomainStatus }> = ({
+  status,
+}) => {
   let badgeColor = "bg-gray/10 text-gray border-gray/10"; // Default color
   switch (status) {
     case DomainStatus.SUCCESS:

@@ -3,15 +3,14 @@ import { z } from "zod";
 import { env } from "~/env";
 
 import { createTRPCRouter, adminProcedure } from "~/server/api/trpc";
-import { SesSettingsService } from "~/server/service/ses-settings-service";
-import { getAccount } from "~/server/aws/ses";
+import { ProviderSettingsService } from "~/server/service/provider-settings-service";
+import { getEmailProvider } from "~/server/provider";
 import { db } from "~/server/db";
 import { sendMail } from "~/server/mailer";
 import { logger } from "~/server/logger/log";
 import { UseSend } from "usesend-js";
 import { isCloud } from "~/utils/common";
 import { toPlainHtml } from "~/server/utils/email-content";
-import { sesRegionSchema } from "~/lib/zod/ses-setting-schema";
 
 const waitlistUserSelection = {
   id: true,
@@ -64,67 +63,28 @@ const teamAdminSelection = {
 } as const;
 
 export const adminRouter = createTRPCRouter({
-  getSesSettings: adminProcedure.query(async () => {
-    return SesSettingsService.getAllSettings();
+  getProviderSettings: adminProcedure.query(async () => {
+    return ProviderSettingsService.getAllSettings();
   }),
 
-  getDefaultSesRegion: adminProcedure.query(() => env.AWS_DEFAULT_REGION),
+  getProviderStatus: adminProcedure.query(async () => {
+    return getEmailProvider().getStatus();
+  }),
 
-  getQuotaForRegion: adminProcedure
-    .input(
-      z.object({
-        region: sesRegionSchema,
-      }),
-    )
-    .query(async ({ input }) => {
-      const acc = await getAccount(input.region);
-      return acc.SendQuota?.MaxSendRate;
-    }),
-
-  addSesSettings: adminProcedure
-    .input(
-      z.object({
-        region: sesRegionSchema,
-        usesendUrl: z.string().url(),
-        sendRate: z.number(),
-        transactionalQuota: z.number(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      return SesSettingsService.createSesSetting({
-        region: input.region,
-        usesendUrl: input.usesendUrl,
-        sendingRateLimit: input.sendRate,
-        transactionalQuota: input.transactionalQuota,
-      });
-    }),
-
-  updateSesSettings: adminProcedure
+  updateProviderSettings: adminProcedure
     .input(
       z.object({
         settingsId: z.string(),
-        sendRate: z.number(),
-        transactionalQuota: z.number(),
+        sendRate: z.number().int().min(1).max(1000),
+        transactionalQuota: z.number().int().min(0).max(100),
       }),
     )
     .mutation(async ({ input }) => {
-      return SesSettingsService.updateSesSetting({
+      return ProviderSettingsService.updateSetting({
         id: input.settingsId,
-        sendingRateLimit: input.sendRate,
+        sendRateLimit: input.sendRate,
         transactionalQuota: input.transactionalQuota,
       });
-    }),
-
-  getSetting: adminProcedure
-    .input(
-      z.object({
-        region: z.string().optional().nullable(),
-      }),
-    )
-    .query(async ({ input }) => {
-      return SesSettingsService.getSetting(
-        input.region ?? env.AWS_DEFAULT_REGION,
-      );
     }),
 
   findUserByEmail: adminProcedure

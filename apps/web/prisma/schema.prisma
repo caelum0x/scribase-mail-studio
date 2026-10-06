@@ -20,26 +20,26 @@ model AppSetting {
   value String
 }
 
-model SesSetting {
-  id                   String   @id @default(cuid())
-  region               String   @unique
-  idPrefix             String   @unique
-  topic                String
-  topicArn             String?
-  transactionalQuota   Int      @default(50)
-  callbackUrl          String
-  callbackSuccess      Boolean  @default(false)
-  configGeneral        String?
-  configGeneralSuccess Boolean  @default(false)
-  configClick          String?
-  configClickSuccess   Boolean  @default(false)
-  configOpen           String?
-  configOpenSuccess    Boolean  @default(false)
-  configFull           String?
-  configFullSuccess    Boolean  @default(false)
-  sesEmailRateLimit    Int      @default(1)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+// Sending configuration for the email provider (Oracle Cloud Email Delivery).
+// One row per provider region; created automatically on first use.
+model ProviderSetting {
+  id                 String   @id @default(cuid())
+  provider           String   @default("oci")
+  region             String   @unique
+  sendRateLimit      Int      @default(1)
+  transactionalQuota Int      @default(50)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// Provider suppression-list entries that were already turned into
+// bounce/complaint events. Prevents duplicate events across polls.
+model ProcessedProviderSuppression {
+  id        String   @id
+  email     String
+  reason    String
+  emailId   String?
+  createdAt DateTime @default(now())
 }
 
 // Necessary for Next auth
@@ -108,7 +108,6 @@ model Team {
   isActive         Boolean           @default(true)
   apiRateLimit     Int               @default(2)
   billingEmail     String?
-  sesTenantId      String?
   isVerified       Boolean           @default(false)
   dailyEmailLimit  Int               @default(10000)
   isBlocked        Boolean           @default(false)
@@ -180,26 +179,28 @@ enum DomainStatus {
 }
 
 model Domain {
-  id            Int          @id @default(autoincrement())
-  name          String       @unique
-  teamId        Int
-  status        DomainStatus @default(PENDING)
-  region        String       @default("us-east-1")
-  clickTracking Boolean      @default(false)
-  openTracking  Boolean      @default(false)
-  publicKey     String
-  dkimSelector  String?      @default("usesend")
-  dkimStatus    String?
-  spfDetails    String?
-  dmarcAdded    Boolean      @default(false)
-  errorMessage  String?
-  subdomain     String?
-  sesTenantId   String?
-  isVerifying   Boolean      @default(false)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  team          Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  apiKeys       ApiKey[]
+  id               Int          @id @default(autoincrement())
+  name             String       @unique
+  teamId           Int
+  status           DomainStatus @default(PENDING)
+  region           String       @default("eu-frankfurt-1")
+  clickTracking    Boolean      @default(false)
+  openTracking     Boolean      @default(false)
+  providerDomainId String?
+  dkimId           String?
+  dkimSelector     String?
+  dkimRecordName   String?
+  dkimRecordValue  String?
+  dkimStatus       String?
+  spfDetails       String?
+  dmarcAdded       Boolean      @default(false)
+  errorMessage     String?
+  subdomain        String?
+  isVerifying      Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  team             Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  apiKeys          ApiKey[]
 }
 
 enum ApiPermission {
@@ -241,30 +242,30 @@ enum EmailStatus {
 }
 
 model Email {
-  id           String       @id @default(cuid())
-  sesEmailId   String?      @unique
-  from         String
-  to           String[]
-  replyTo      String[]
-  cc           String[]
-  bcc          String[]
-  subject      String
-  text         String?
-  html         String?
-  latestStatus EmailStatus  @default(QUEUED)
-  teamId       Int
-  domainId     Int?
-  apiId        Int?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  scheduledAt  DateTime?
-  attachments  String?
-  campaignId   String?
-  contactId    String?
-  inReplyToId  String?
-  headers      String?
-  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  emailEvents  EmailEvent[]
+  id                String       @id @default(cuid())
+  providerMessageId String?      @unique
+  from              String
+  to                String[]
+  replyTo           String[]
+  cc                String[]
+  bcc               String[]
+  subject           String
+  text              String?
+  html              String?
+  latestStatus      EmailStatus  @default(QUEUED)
+  teamId            Int
+  domainId          Int?
+  apiId             Int?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  scheduledAt       DateTime?
+  attachments       String?
+  campaignId        String?
+  contactId         String?
+  inReplyToId       String?
+  headers           String?
+  team              Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  emailEvents       EmailEvent[]
 
   @@index([campaignId, contactId])
   @@index([createdAt(sort: Desc)])

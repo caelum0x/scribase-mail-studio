@@ -37,7 +37,7 @@ const NON_FORWARDABLE_HEADERS = new Set([
 const NON_FORWARDABLE_PREFIXES = [
   "arc-",
   "resent-",
-  "x-ses-",
+  "x-scribase-",
   "x-unsend-",
   "x-usesend-",
 ];

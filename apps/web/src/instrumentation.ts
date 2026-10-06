@@ -13,9 +13,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && !initialized) {
     console.log("Registering instrumentation");
 
-    const { EmailQueueService } = await import(
-      "~/server/service/email-queue-service"
-    );
+    const { EmailQueueService } =
+      await import("~/server/service/email-queue-service");
     await EmailQueueService.init();
 
     /**
@@ -27,15 +26,18 @@ export async function register() {
 
     if (process.env.REDIS_URL) {
       await initDomainVerificationJob();
+
+      const { initProviderSuppressionPollJob } =
+        await import("~/server/jobs/provider-suppression-poll-job");
+      await initProviderSuppressionPollJob();
     }
 
     if (isEmailCleanupEnabled()) {
       await import("~/server/jobs/cleanup-email-bodies");
     }
 
-    const { CampaignSchedulerService } = await import(
-      "~/server/jobs/campaign-scheduler-job"
-    );
+    const { CampaignSchedulerService } =
+      await import("~/server/jobs/campaign-scheduler-job");
     await CampaignSchedulerService.start();
 
     initialized = true;

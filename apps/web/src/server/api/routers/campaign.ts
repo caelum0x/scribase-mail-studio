@@ -2,7 +2,6 @@ import { CampaignStatus, Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { EmailRenderer } from "@usesend/email-editor/src/renderer";
 import { z } from "zod";
-import { env } from "~/env";
 import {
   teamProcedure,
   createTRPCRouter,
@@ -15,6 +14,7 @@ import * as campaignService from "~/server/service/campaign-service";
 import { validateDomainFromEmail } from "~/server/service/domain-service";
 import {
   getDocumentUploadUrl,
+  getStoragePublicUrl,
   isStorageConfigured,
 } from "~/server/service/storage-service";
 
@@ -171,9 +171,11 @@ export const campaignRouter = createTRPCRouter({
       return campaign;
     }),
 
-  deleteCampaign: campaignProcedure.mutation(async ({ ctx: { team }, input }) => {
-    return await campaignService.deleteCampaign(input.campaignId, team.id);
-  }),
+  deleteCampaign: campaignProcedure.mutation(
+    async ({ ctx: { team }, input }) => {
+      return await campaignService.deleteCampaign(input.campaignId, team.id);
+    },
+  ),
 
   getCampaign: campaignProcedure.query(async ({ ctx: { db, team }, input }) => {
     const campaign = await db.campaign.findUnique({
@@ -305,12 +307,9 @@ export const campaignRouter = createTRPCRouter({
       const extension = input.name.split(".").pop();
       const randomName = `${nanoid()}.${extension}`;
 
-      const url = await getDocumentUploadUrl(
-        `${team.id}/${randomName}`,
-        input.type,
-      );
+      const url = await getDocumentUploadUrl(`${team.id}/${randomName}`);
 
-      const imageUrl = `${env.S3_COMPATIBLE_PUBLIC_URL}/${team.id}/${randomName}`;
+      const imageUrl = getStoragePublicUrl(`${team.id}/${randomName}`);
 
       return { uploadUrl: url, imageUrl };
     }),

@@ -3,7 +3,7 @@ import { format, subDays } from "date-fns";
 import { z } from "zod";
 import { DEFAULT_QUERY_LIMIT } from "~/lib/constants";
 import { BOUNCE_ERROR_MESSAGES } from "@usesend/lib/src";
-import type { SesBounce } from "~/types/aws-types";
+import type { MailBounce } from "~/types/mail-events";
 
 import {
   createTRPCRouter,
@@ -17,7 +17,7 @@ const statuses = Object.values(EmailStatus) as [EmailStatus];
 
 const ensureBounceObject = (
   data: Prisma.JsonValue,
-): Partial<SesBounce> | undefined => {
+): Partial<MailBounce> | undefined => {
   const raw =
     typeof data === "string"
       ? (() => {
@@ -29,20 +29,17 @@ const ensureBounceObject = (
         })()
       : data;
   if (!raw || typeof raw !== "object") return undefined;
-  return raw as Partial<SesBounce>;
+  return raw as Partial<MailBounce>;
 };
 
 const getBounceReasonFromParsed = (
-  bounce: Partial<SesBounce>,
+  bounce: Partial<MailBounce>,
 ): string | undefined => {
   const diagnostic = bounce.bouncedRecipients?.[0]?.diagnosticCode?.trim();
   if (diagnostic) return diagnostic;
 
   const type = (bounce.bounceType ?? "").toString().trim() as
-    | "Transient"
-    | "Permanent"
-    | "Undetermined"
-    | "";
+    "Transient" | "Permanent" | "Undetermined" | "";
   const subtype = (bounce.bounceSubType ?? "")
     .toString()
     .trim()

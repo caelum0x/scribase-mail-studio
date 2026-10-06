@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 
 import {
   createTRPCRouter,
@@ -15,27 +16,50 @@ import {
   updateDomain,
 } from "~/server/service/domain-service";
 import { sendEmail } from "~/server/service/email-service";
-import { SesSettingsService } from "~/server/service/ses-settings-service";
-import {
-  getValidSesRegions,
-  sesRegionSchema,
-} from "~/lib/zod/ses-setting-schema";
+import { ProviderSettingsService } from "~/server/service/provider-settings-service";
+import { getEmailProvider } from "~/server/provider";
 
 export const domainRouter = createTRPCRouter({
   getAvailableRegions: protectedProcedure.query(async () => {
-    const settings = await SesSettingsService.getAllSettings();
-    return getValidSesRegions(settings.map((setting) => setting.region));
+    return ProviderSettingsService.getAvailableRegions();
   }),
 
   createDomain: teamProcedure
-    .input(z.object({ name: z.string(), region: sesRegionSchema }))
+    .input(
+      z.object({
+        name: z.string().trim().min(1),
+        region: z.string().trim().min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
-      return createDomain(
-        ctx.team.id,
-        input.name,
-        input.region,
-        ctx.team.sesTenantId ?? undefined
-      );
+      return createDomain(ctx.team.id, input.name, input.region);
+    }),
+
+  approvedSenders: domainProcedure.query(async ({ ctx }) => {
+    return getEmailProvider().listApprovedSenders(ctx.domain.name);
+  }),
+
+  addApprovedSender: domainProcedure
+    .input(
+      z.object({
+        localPart: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .regex(/^[a-zA-Z0-9._%+-]+$/, "Invalid sender address"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.domain.status !== "SUCCESS") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Verify the domain before adding senders",
+        });
+      }
+      const email = `${input.localPart.toLowerCase()}@${ctx.domain.name}`;
+      await getEmailProvider().ensureApprovedSender(email);
+      return { email };
     }),
 
   startVerification: domainProcedure.mutation(async ({ ctx, input }) => {
@@ -58,7 +82,7 @@ export const domainRouter = createTRPCRouter({
       z.object({
         clickTracking: z.boolean().optional(),
         openTracking: z.boolean().optional(),
-      })
+      }),
     )
     .mutation(async ({ input }) => {
       return updateDomain(input.id, {
@@ -97,9 +121,9 @@ export const domainRouter = createTRPCRouter({
         to: user.email,
         from: `hello@${domain.name}`,
         subject: "useSend test email",
-        text: "hello,\n\nuseSend is the best open source sending platform\n\ncheck out https://usesend.com",
-        html: "<p>hello,</p><p>useSend is the best open source sending platform<p><p>check out <a href='https://usesend.com'>usesend.com</a>",
+        text: "hello,\n\nThis is a test email from Scribase Mail.\n\nhttps://scribase.com",
+        html: "<p>hello,</p><p>This is a test email from Scribase Mail.</p><p><a href='https://scribase.com'>scribase.com</a></p>",
       });
-    }
+    },
   ),
 });

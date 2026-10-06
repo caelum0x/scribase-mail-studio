@@ -1,14 +1,14 @@
 import dns from "dns";
 import util from "util";
 import * as tldts from "tldts";
-import * as ses from "~/server/aws/ses";
 import { db } from "~/server/db";
+import { getEmailProvider, getProviderRegion } from "~/server/provider";
+import { buildDkimSelector } from "~/server/provider/oci/mappers";
 import { env } from "~/env";
 import { renderDomainVerificationStatusEmail } from "~/server/email-templates";
 import { logger } from "~/server/logger/log";
 import { sendMail } from "~/server/mailer";
 import { getRedis, redisKey } from "~/server/redis";
-import { SesSettingsService } from "./ses-settings-service";
 import { UnsendApiError } from "../public-api/api-error";
 import { ApiKey, DomainStatus, type Domain } from "@prisma/client";
 import {
@@ -54,10 +54,26 @@ function parseDomainStatus(status?: string | null): DomainStatus {
   return DomainStatus.NOT_STARTED;
 }
 
+const DKIM_SELECTOR_PREFIX = "scribase";
+const DKIM_PENDING_VALUE = "Generated after the domain is provisioned";
+
+/** Converts an FQDN into a host name relative to the registrable domain. */
+function toRelativeHost(fqdn: string, baseDomain: string | null) {
+  const name = fqdn.replace(/\.$/, "");
+  if (baseDomain && name === baseDomain) {
+    return "@";
+  }
+  if (baseDomain && name.endsWith(`.${baseDomain}`)) {
+    return name.slice(0, -(baseDomain.length + 1));
+  }
+  return name;
+}
+
 function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
-  const subdomainSuffix = domain.subdomain ? `.${domain.subdomain}` : "";
-  const mailDomain = `mail${subdomainSuffix}`;
-  const dkimSelector = domain.dkimSelector ?? "usesend";
+  const baseDomain = tldts.getDomain(domain.name);
+  const dkimSelector = domain.dkimSelector ?? DKIM_SELECTOR_PREFIX;
+  const dkimFqdn =
+    domain.dkimRecordName ?? `${dkimSelector}._domainkey.${domain.name}`;
 
   const spfStatus = parseDomainStatus(domain.spfDetails);
   const dkimStatus = parseDomainStatus(domain.dkimStatus);
@@ -67,24 +83,16 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
 
   return [
     {
-      type: "MX",
-      name: mailDomain,
-      value: `feedback-smtp.${domain.region}.amazonses.com`,
-      ttl: "Auto",
-      priority: "10",
-      status: spfStatus,
-    },
-    {
-      type: "TXT",
-      name: `${dkimSelector}._domainkey${subdomainSuffix}`,
-      value: `p=${domain.publicKey}`,
+      type: "CNAME",
+      name: toRelativeHost(dkimFqdn, baseDomain),
+      value: domain.dkimRecordValue ?? DKIM_PENDING_VALUE,
       ttl: "Auto",
       status: dkimStatus,
     },
     {
       type: "TXT",
-      name: mailDomain,
-      value: "v=spf1 include:amazonses.com ~all",
+      name: toRelativeHost(domain.name, baseDomain),
+      value: getEmailProvider().spfRecord,
       ttl: "Auto",
       status: spfStatus,
     },
@@ -270,10 +278,10 @@ async function sendDomainStatusNotification({
 
   const subject =
     domain.status === DomainStatus.SUCCESS
-      ? `useSend: ${domain.name} is verified`
+      ? `Scribase Mail: ${domain.name} is verified`
       : previousStatus === DomainStatus.SUCCESS
-        ? `useSend: ${domain.name} verification status changed`
-        : `useSend: ${domain.name} verification failed`;
+        ? `Scribase Mail: ${domain.name} verification status changed`
+        : `Scribase Mail: ${domain.name} verification failed`;
 
   const domainUrl = `${env.NEXTAUTH_URL}/domains/${domain.id}`;
   const html = await renderDomainVerificationStatusEmail({
@@ -294,12 +302,12 @@ async function sendDomainStatusNotification({
     `Open domain settings: ${domainUrl}`,
     null,
     "Thanks,",
-    "useSend Team",
+    "The Scribase team",
   ].filter((value): value is string => Boolean(value));
 
   await Promise.all(
     recipients.map((email) =>
-      sendMail(email, subject, textLines.join("\n"), html, "hey@usesend.com"),
+      sendMail(email, subject, textLines.join("\n"), html),
     ),
   );
 }
@@ -315,7 +323,6 @@ function buildDomainPayload(domain: Domain): DomainPayload {
     clickTracking: domain.clickTracking,
     openTracking: domain.openTracking,
     subdomain: domain.subdomain,
-    sesTenantId: domain.sesTenantId,
     dkimStatus: domain.dkimStatus,
     spfDetails: domain.spfDetails,
     dmarcAdded: domain.dmarcAdded,
@@ -353,7 +360,7 @@ export async function validateDomainFromEmail(email: string, teamId: number) {
   if (!domain) {
     throw new UnsendApiError({
       code: "BAD_REQUEST",
-      message: `Domain: ${fromDomain} of from email is wrong. Use the domain verified by useSend`,
+      message: `Domain: ${fromDomain} of from email is wrong. Use a domain verified in Scribase Mail`,
     });
   }
 
@@ -394,8 +401,7 @@ export async function validateApiKeyDomainAccess(
 export async function createDomain(
   teamId: number,
   name: string,
-  region: string,
-  sesTenantId?: string,
+  region: string = getProviderRegion(),
 ) {
   const domainStr = tldts.getDomain(name);
 
@@ -405,10 +411,11 @@ export async function createDomain(
     throw new Error("Invalid domain");
   }
 
-  const setting = await SesSettingsService.getSetting(region);
-
-  if (!setting) {
-    throw new Error("Ses setting not found");
+  if (region !== getProviderRegion()) {
+    throw new UnsendApiError({
+      code: "BAD_REQUEST",
+      message: `Region ${region} is not available. Use ${getProviderRegion()}`,
+    });
   }
 
   const { isLimitReached, reason } =
@@ -422,23 +429,21 @@ export async function createDomain(
   }
 
   const subdomain = tldts.getSubdomain(name);
-  const dkimSelector = "usesend";
-  const publicKey = await ses.addDomain(
-    name,
-    region,
-    sesTenantId,
-    dkimSelector,
-  );
+  const provider = getEmailProvider();
+  const dkimSelector = buildDkimSelector(DKIM_SELECTOR_PREFIX, region);
+  const providerDomain = await provider.addDomain(name, { dkimSelector });
 
   const domain = await db.domain.create({
     data: {
       name,
-      publicKey,
       teamId,
       subdomain,
       region,
-      sesTenantId,
-      dkimSelector,
+      providerDomainId: providerDomain.providerDomainId,
+      dkimId: providerDomain.dkim.dkimId,
+      dkimSelector: providerDomain.dkim.selector ?? dkimSelector,
+      dkimRecordName: providerDomain.dkim.recordName,
+      dkimRecordValue: providerDomain.dkim.recordValue,
       dkimStatus: DomainStatus.NOT_STARTED,
       spfDetails: DomainStatus.NOT_STARTED,
     },
@@ -488,19 +493,21 @@ export async function refreshDomainVerification(
 
   const verificationState = await getDomainVerificationState(domain.id);
   const previousStatus = domain.status;
-  const domainIdentity = await ses.getDomainIdentity(
-    domain.name,
-    domain.region,
-  );
-  const dkimStatus = domainIdentity.DkimAttributes?.Status?.toString();
-  const spfDetails =
-    domainIdentity.MailFromAttributes?.MailFromDomainStatus?.toString();
-  const verificationError =
-    domainIdentity.VerificationInfo?.ErrorType?.toString() ?? null;
-  const verificationStatus = parseDomainStatus(
-    domainIdentity.VerificationStatus?.toString(),
-  );
-  const lastCheckedTime = domainIdentity.VerificationInfo?.LastCheckedTimestamp;
+  const providerStatus = await getEmailProvider().getDomainStatus({
+    name: domain.name,
+    providerDomainId: domain.providerDomainId,
+    dkimId: domain.dkimId,
+    dkimSelector: domain.dkimSelector,
+  });
+  const dkimStatus: string = providerStatus.dkimStatus;
+  const spfDetails: string =
+    providerStatus.spfStatus === DomainStatus.SUCCESS ||
+    (await hasProviderSpfRecord(domain.name))
+      ? DomainStatus.SUCCESS
+      : providerStatus.spfStatus;
+  const verificationError = providerStatus.errorMessage;
+  const verificationStatus = providerStatus.status;
+  const lastCheckedTime = providerStatus.checkedAt;
   const baseDomain = tldts.getDomain(domain.name);
   const _dmarcRecord = baseDomain ? await getDmarcRecord(baseDomain) : null;
   const dmarcRecord = _dmarcRecord?.[0]?.[0];
@@ -515,6 +522,21 @@ export async function refreshDomainVerification(
       spfDetails: spfDetails ?? null,
       status: verificationStatus,
       errorMessage: verificationError,
+      ...(providerStatus.providerDomainId
+        ? { providerDomainId: providerStatus.providerDomainId }
+        : {}),
+      ...(providerStatus.dkim.dkimId
+        ? { dkimId: providerStatus.dkim.dkimId }
+        : {}),
+      ...(providerStatus.dkim.selector
+        ? { dkimSelector: providerStatus.dkim.selector }
+        : {}),
+      ...(providerStatus.dkim.recordName
+        ? { dkimRecordName: providerStatus.dkim.recordName }
+        : {}),
+      ...(providerStatus.dkim.recordValue
+        ? { dkimRecordValue: providerStatus.dkim.recordValue }
+        : {}),
       dmarcAdded: Boolean(dmarcRecord),
       isVerifying: shouldContinueVerifying(
         verificationStatus,
@@ -622,11 +644,10 @@ export async function deleteDomain(id: number) {
     throw new Error("Domain not found");
   }
 
-  const deleted = await ses.deleteDomain(
-    domain.name,
-    domain.region,
-    domain.sesTenantId ?? undefined,
-  );
+  const deleted = await getEmailProvider().deleteDomain({
+    name: domain.name,
+    providerDomainId: domain.providerDomainId,
+  });
 
   if (!deleted) {
     throw new Error("Error in deleting domain");
@@ -662,6 +683,24 @@ export async function getDomains(
   });
 
   return domains.map((d) => withDnsRecords(d));
+}
+
+async function hasProviderSpfRecord(domain: string) {
+  try {
+    const records = await dnsResolveTxt(domain);
+    const include = getEmailProvider()
+      .spfRecord.split(" ")
+      .find((part) => part.startsWith("include:"));
+    return Boolean(
+      include &&
+      records.some((chunks) => {
+        const value = chunks.join("");
+        return value.startsWith("v=spf1") && value.includes(include);
+      }),
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function getDmarcRecord(domain: string) {
