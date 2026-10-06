@@ -1,0 +1,13 @@
+Scribase Mail
+Copyright (C) 2026 Scribase
+
+This product is a modified version of useSend
+(https://github.com/usesend/useSend), Copyright (C) the useSend authors,
+licensed under the GNU Affero General Public License v3.0.
+
+Scribase Mail is distributed under the same license (see LICENSE). The
+complete corresponding source code is available at
+https://github.com/caelum0x/scribase-mail-studio.
+
+See MERGE.md for the upstream revision this fork is based on and the list of
+modifications.

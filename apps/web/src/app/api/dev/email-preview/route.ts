@@ -20,13 +20,13 @@ export async function GET(request: NextRequest) {
     if (type === "otp") {
       html = await renderOtpEmail({
         otpCode: "ABC123",
-        loginUrl: "https://app.usesend.com/login?token=abc123",
-        hostName: "useSend",
+        loginUrl: "https://mail.scribase.com/login?token=abc123",
+        hostName: "Scribase Mail",
       });
     } else if (type === "invite") {
       html = await renderTeamInviteEmail({
         teamName: "My Awesome Team",
-        inviteUrl: "https://app.usesend.com/join-team?inviteId=123",
+        inviteUrl: "https://mail.scribase.com/join-team?inviteId=123",
         inviterName: "John Doe",
         role: "admin",
       });
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         used: 8000,
         limit: 10000,
         period: period as "daily" | "monthly",
-        manageUrl: "https://app.usesend.com/settings/billing",
+        manageUrl: "https://mail.scribase.com/settings/billing",
         isPaidPlan: isPaidPlan,
       });
     } else if (type === "usage-limit") {
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         teamName: "Acme Inc",
         limit: 10000,
         period: period as "daily" | "monthly",
-        manageUrl: "https://app.usesend.com/settings/billing",
+        manageUrl: "https://mail.scribase.com/settings/billing",
         isPaidPlan: isPaidPlan,
       });
     } else {
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     console.error("Error rendering email template:", error);
     return NextResponse.json(
       { error: "Failed to render email template" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

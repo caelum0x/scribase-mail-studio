@@ -2,104 +2,108 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@usesend/ui/src/button";
+import { APP_URL, DOCS_URL, SOURCE_CODE_URL } from "~/lib/site";
 
-const REPO = "usesend/usesend";
-const REPO_URL = `https://github.com/${REPO}`;
-const APP_URL = "https://app.usesend.com";
+const NAV_LINKS = [
+  { href: "/#features", label: "Features", external: false },
+  { href: DOCS_URL, label: "Docs", external: true },
+  { href: SOURCE_CODE_URL, label: "Source", external: true },
+];
 
 export function TopNav() {
   const [open, setOpen] = useState(false);
-  const pathname = usePathname();
-  const isHome = pathname === "/";
-  const pricingHref = isHome ? "#pricing" : "/#pricing";
 
   return (
-    <header className="py-4 border-b border-border sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-sidebar-background/80">
-      <div className="mx-auto max-w-6xl px-6 flex items-center justify-between gap-4 text-sm">
-        <Link href="/" className="flex items-center gap-2 group">
-          <Image src="/logo-squircle.png" alt="useSend" width={24} height={24} />
-          <span className="text-primary font-mono text-[16px] group-hover:opacity-90">useSend</span>
+    <header className="sticky top-0 z-20 border-b border-border/60 bg-background/70 py-4 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 text-sm">
+        <Link href="/" className="group flex items-center gap-2">
+          <Image
+            src="/logo-squircle.png"
+            alt="Scribase Mail"
+            width={24}
+            height={24}
+          />
+          <span className="text-[16px] font-medium tracking-tight group-hover:opacity-90">
+            Scribase Mail
+          </span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden sm:flex items-center gap-4 text-muted-foreground">
-          <Link href={pricingHref} className="hover:text-foreground">
-            Pricing
-          </Link>
-          <a
-            href="https://docs.usesend.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            Docs
-          </a>
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            GitHub
-          </a>
-          <Button size="sm" className="ml-2">
-            <a href={APP_URL} target="_blank" rel="noopener noreferrer">
-              Get started
-            </a>
+        <nav className="hidden items-center gap-5 text-muted-foreground sm:flex">
+          {NAV_LINKS.map((link) =>
+            link.external ? (
+              <a
+                key={link.label}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-foreground"
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link
+                key={link.label}
+                href={link.href}
+                className="hover:text-foreground"
+              >
+                {link.label}
+              </Link>
+            ),
+          )}
+          <Button size="sm" className="ml-2" asChild>
+            <a href={APP_URL}>Start sending</a>
           </Button>
         </nav>
 
-        {/* Mobile hamburger */}
         <button
-          aria-label="Open menu"
-          className="sm:hidden inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:text-foreground hover:bg-accent focus:outline-none focus:ring-2 focus:ring-border"
-          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Close menu" : "Open menu"}
+          className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground sm:hidden"
+          onClick={() => setOpen((value) => !value)}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-6 w-6"
+            aria-hidden="true"
+          >
             {open ? (
-              <path d="M6 18 18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M6 18 18 6M6 6l12 12"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             ) : (
-              <path d="M3 6h18M3 12h18M3 18h18" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M3 6h18M3 12h18M3 18h18"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             )}
           </svg>
         </button>
       </div>
 
-      {/* Mobile menu panel */}
       {open ? (
-        <div className="sm:hidden border-t border-border bg-sidebar-background/95 backdrop-blur">
-          <div className="mx-auto max-w-6xl px-6 py-3 flex flex-col gap-2">
-            <Link href={pricingHref} className="py-2 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>
-              Pricing
-            </Link>
-            <a
-              href="https://docs.usesend.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setOpen(false)}
-            >
-              Docs
-            </a>
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setOpen(false)}
-            >
-              GitHub
-            </a>
-            <div className="pt-2">
-              <Button className="w-full">
-                <a href={APP_URL} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
-                  Get started
-                </a>
-              </Button>
-            </div>
+        <div className="border-t border-border/60 bg-background/90 backdrop-blur-xl sm:hidden">
+          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-3">
+            {NAV_LINKS.map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                className="py-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setOpen(false)}
+              >
+                {link.label}
+              </a>
+            ))}
+            <Button className="mt-2 w-full" asChild>
+              <a href={APP_URL}>Start sending</a>
+            </Button>
           </div>
         </div>
       ) : null}

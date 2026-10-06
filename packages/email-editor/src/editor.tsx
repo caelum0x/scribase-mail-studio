@@ -19,7 +19,7 @@ import { UploadFn } from "./extensions/ImageExtension";
 
 const content = `<h2>Hello World!</h2>
 
-<h3>useSend is the best open source resend alternative.</h3>
+<h3>Start writing your email here.</h3>
 
 <p>Use markdown (<code># </code>, <code>## </code>, <code>### </code>, <code>\`\`</code>, <code>* *</code>, <code>** **</code>) to write your email. </p>
 <p>You can <b>Bold</b> text.

@@ -1,11 +1,11 @@
 ---
 title: Webhooks
-description: "Receive real-time notifications when events occur in your useSend account"
+description: "Receive real-time notifications when events occur in your Scribase Mail account"
 ---
 
 ## Overview
 
-Webhooks allow you to receive HTTP POST requests to your server when events occur in useSend, such as when an email is delivered, bounced, or clicked. This enables you to build real-time integrations and automate workflows.
+Webhooks allow you to receive HTTP POST requests to your server when events occur in Scribase Mail, such as when an email is delivered, bounced, or clicked. This enables you to build real-time integrations and automate workflows.
 
 ## Setting up webhooks
 
@@ -19,7 +19,7 @@ Webhooks allow you to receive HTTP POST requests to your server when events occu
 
   </Step>
   <Step title="Add webhook in dashboard">
-    Go to [Webhooks](https://app.usesend.com/webhooks) in your useSend dashboard and create a new webhook:
+    Go to [Webhooks](https://mail.scribase.com/webhooks) in your Scribase Mail dashboard and create a new webhook:
 
     - Enter your endpoint URL
     - Select which events you want to receive
@@ -27,7 +27,7 @@ Webhooks allow you to receive HTTP POST requests to your server when events occu
 
   </Step>
   <Step title="Verify webhook signatures">
-    Always verify webhook signatures to ensure requests are from useSend. See the [Signature Verification](#signature-verification) section below.
+    Always verify webhook signatures to ensure requests are from Scribase Mail. See the [Signature Verification](#signature-verification) section below.
   </Step>
 </Steps>
 
@@ -263,7 +263,7 @@ const isValid = verifyWebhook(secret, rawBody, signature, timestamp);
 
 ## Retry behavior
 
-If your endpoint doesn't return a 2xx response, useSend will retry delivery with exponential backoff:
+If your endpoint doesn't return a 2xx response, Scribase Mail will retry delivery with exponential backoff:
 
 | Attempt | Delay       |
 | ------- | ----------- |
@@ -295,7 +295,7 @@ After 6 failed attempts, the webhook call is marked as failed.
   </Accordion>
   <Accordion title="Verify signatures">
     Always verify the `X-UseSend-Signature` header to ensure requests are from
-    useSend and haven't been tampered with.
+    Scribase Mail and haven't been tampered with.
   </Accordion>
   <Accordion title="Check timestamps">
     The SDK rejects signatures older than 5 minutes by default. This prevents
@@ -310,7 +310,7 @@ After 6 failed attempts, the webhook call is marked as failed.
 
 You can send a test webhook from the dashboard to verify your endpoint is working correctly:
 
-1. Go to [Webhooks](https://app.usesend.com/webhooks)
+1. Go to [Webhooks](https://mail.scribase.com/webhooks)
 2. Click on your webhook
 3. Click "Send Test" to send a test event
 
@@ -474,7 +474,7 @@ All domain events (`domain.created`, `domain.verified`, `domain.updated`, `domai
   id: number;              // Domain ID
   name: string;            // Domain name (e.g., "example.com")
   status: string;          // Domain status
-  region: string;          // AWS region
+  region: string;          // provider region, e.g. eu-frankfurt-1
   createdAt: string;       // ISO 8601 timestamp
   updatedAt: string;       // ISO 8601 timestamp
   clickTracking: boolean;  // Click tracking enabled

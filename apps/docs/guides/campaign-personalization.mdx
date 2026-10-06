@@ -23,7 +23,7 @@ Campaign personalization lets you pull values from your contacts into campaign e
     subject or email content.
   </Step>
   <Step title="Send the campaign">
-    useSend replaces each variable with that contact's value when the campaign
+    Scribase Mail replaces each variable with that contact's value when the campaign
     is rendered.
   </Step>
 </Steps>
@@ -55,7 +55,7 @@ Every campaign must include an unsubscribe link. Use the recipient-specific
 
 ### 1. Add variables to your contact book
 
-1. Go to [Contacts](https://app.usesend.com/contacts)
+1. Go to [Contacts](https://mail.scribase.com/contacts)
 2. Create a new contact book or open an existing one
 3. Add your variables as a comma-separated list, for example:
 
@@ -123,7 +123,7 @@ This renders `there` when `firstName` is empty.
 ### Create a contact book with variables
 
 ```bash
-curl -X POST https://app.usesend.com/api/v1/contactBooks \
+curl -X POST https://mail.scribase.com/api/v1/contactBooks \
   -H "Authorization: Bearer us_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -135,7 +135,7 @@ curl -X POST https://app.usesend.com/api/v1/contactBooks \
 ### Create a contact with variable values
 
 ```bash
-curl -X POST https://app.usesend.com/api/v1/contactBooks/{contactBookId}/contacts \
+curl -X POST https://mail.scribase.com/api/v1/contactBooks/{contactBookId}/contacts \
   -H "Authorization: Bearer us_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -152,7 +152,7 @@ curl -X POST https://app.usesend.com/api/v1/contactBooks/{contactBookId}/contact
 ### Create a campaign that uses variables
 
 ```bash
-curl -X POST https://app.usesend.com/api/v1/campaigns \
+curl -X POST https://mail.scribase.com/api/v1/campaigns \
   -H "Authorization: Bearer us_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{

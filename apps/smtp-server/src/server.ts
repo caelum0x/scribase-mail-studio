@@ -8,11 +8,12 @@ import { resolveRecipients } from "./recipients";
 
 dotenv.config();
 
-const AUTH_USERNAME = process.env.SMTP_AUTH_USERNAME ?? "usesend";
+const AUTH_USERNAME = process.env.SMTP_AUTH_USERNAME ?? "scribase";
 const BASE_URL =
+  process.env.SCRIBASE_MAIL_BASE_URL ??
   process.env.USESEND_BASE_URL ??
   process.env.UNSEND_BASE_URL ??
-  "https://app.usesend.com";
+  "https://mail.scribase.com";
 const SSL_KEY_PATH =
   process.env.USESEND_API_KEY_PATH ?? process.env.UNSEND_API_KEY_PATH;
 const SSL_CERT_PATH =
@@ -22,7 +23,7 @@ async function sendEmailToUseSend(emailData: any, apiKey: string) {
   try {
     const apiEndpoint = "/api/v1/emails";
     const url = new URL(apiEndpoint, BASE_URL); // Combine base URL with endpoint
-    console.log("Sending email to useSend API at:", url.href); // Debug statement
+    console.log("Sending email to Scribase Mail API at:", url.href); // Debug statement
 
     const emailDataText = JSON.stringify(emailData);
 
@@ -38,7 +39,7 @@ async function sendEmailToUseSend(emailData: any, apiKey: string) {
     if (!response.ok) {
       const errorData = await response.text();
       console.error(
-        "useSend API error response: error:",
+        "Scribase Mail API error response: error:",
         JSON.stringify(errorData, null, 4),
         `\nemail data: ${emailDataText}`,
       );
@@ -48,7 +49,7 @@ async function sendEmailToUseSend(emailData: any, apiKey: string) {
     }
 
     const responseData = await response.json();
-    console.log("useSend API response:", responseData);
+    console.log("Scribase Mail API response:", responseData);
   } catch (error) {
     if (error instanceof Error) {
       console.error("Error message:", error.message);

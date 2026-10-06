@@ -1,152 +1,71 @@
 <p align="center">
-  <img style="width: 200px;height: 200px; margin: auto;" src="https://usesend.com/logo-squircle.png" alt="useSend Logo">
+  <img style="width: 120px;height: 120px; margin: auto;" src="apps/web/public/logo-squircle.png" alt="Scribase Mail">
 </p>
 
-<p align="center" style="margin-top: 20px">
-  <p align="center">
-  The Open Source sending infrastructure.
-  <br>
-    <a href="https://usesend.com"><strong>Learn more »</strong></a>
-    <br />
-    <br />
-    <a href="https://discord.gg/BU8n8pJv8S">Discord</a>
-    .
-    <a href="https://usesend.com">Website</a>
-    ·
-    <a href="https://github.com/usesend/usesend/issues">Issues</a>
-  </p>
-</p>
+<h1 align="center">Scribase Mail</h1>
 
 <p align="center">
-   <a href="https://discord.gg/BU8n8pJv8S"><img src="https://img.shields.io/badge/Discord-usesend-%235865F2" alt="Join useSend on Discord"></a>
-   <a href="https://github.com/usesend/usesend/stargazers"><img src="https://img.shields.io/github/stars/usesend%2Fusesend" alt="GitHub Stars"></a>
-   <a href="https://github.com/usesend/usesend/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-purple" alt="License"></a>
-   <a href="https://hub.docker.com/r/usesend/usesend"><img alt="Docker Automated build" src="https://img.shields.io/docker/pulls/usesend/usesend"></a>
+  Email API and dashboard for Scribase. Send transactional and marketing email
+  with a familiar REST API, verified domains, campaigns, contacts and webhooks.
 </p>
 
-## About this project
+## About
 
-As most of email products out there, useSend also uses Amazon SES under the hood to send emails. We provide an open and alternative way to send emails reliably and cheaply with a great dashboard. You can also use useSend manage contacts and send bulk emails(newsletter, product updates etc). We will take care of the subscriptions.
-
-Currently we only support emails, but we plan to expand to other sending protocols like SMS, push notification and even whatsapp.
-
-We are currently in beta!
+Scribase Mail is the email layer of [Scribase](https://scribase.com). It is a
+fork of [useSend](https://github.com/usesend/useSend) (AGPL-3.0) in which the
+sending provider was replaced: mail is delivered through **Oracle Cloud
+Infrastructure (OCI) Email Delivery** (SMTP for sending, the Email Delivery API
+for domains, DKIM, approved senders and suppressions). See
+[MERGE.md](./MERGE.md) for attribution and the list of changes.
 
 ## Features
 
-- [x] Add domains
-- [x] Transactional Mails
-- [x] Rest API
-- [x] Dashboard (Delivered, opened, clicked, bounced)
-- [x] Marketing email
-- [x] SMTP support
-- [x] Schedule API
-- [x] Webhook support
-- [ ] Inbound email
-- [ ] BYO AWS credentials
+- REST API for sending (single, batch, scheduled), domains, contacts, contact
+  books and campaigns; TypeScript, Python and Go SDKs
+- Domain verification with OCI-managed DKIM (CNAME) and SPF
+- Approved senders created automatically on first send
+- First-party open and click tracking (signed pixel and redirect links)
+- Bounces and complaints from the OCI suppression list, polled on a schedule,
+  feeding the team suppression list, metrics and webhooks
+- Signed webhooks with retries
+- Campaign editor, double opt-in, one-click unsubscribe
+- Optional SMTP proxy (`apps/smtp-server`) that forwards to the REST API
 
-## Community and Next Steps 🎯
+What is different from push-based providers is documented in
+[`apps/docs/self-hosting/oci-email-delivery.mdx`](./apps/docs/self-hosting/oci-email-delivery.mdx).
 
-We're currently working on opening useSend for public beta.
+## Tech stack
 
-- Check out the first source code release in this repository and test it.
-- Tell us what you think in the [Discussions](https://github.com/usesend/usesend/discussions).
-- Join the [Discord server](https://discord.gg/BU8n8pJv8S) for any questions and getting to know to other community members.
-- ⭐ the repository to help us raise awareness.
-- Spread the word on Twitter.
-- Fix or create [issues](https://github.com/usesend/usesend/issues), that are needed for the first production release.
+Next.js, Prisma (Postgres), Redis + BullMQ, tRPC, Hono (public API), NextAuth,
+Tailwind, the OCI TypeScript SDK and nodemailer.
 
-## Tech Stack
+## Local development
 
-- [Next.js](https://nextjs.org/) - Framework
-- [Prisma](https://www.prisma.io/) - ORM
-- [Tailwind](https://tailwindcss.com/) - CSS
-- [shadcn/ui](https://ui.shadcn.com/) - Component Library
-- [NextAuth.js](https://next-auth.js.org/) - Authentication
-- [tRPC](https://trpc.io/) - API
-- [hono](https://hono.dev/) - Public API
-- [Redis](https://redis.io/) - Queue
+```sh
+pnpm install
+cp .env.example .env        # fill in OCI SMTP + API values to actually send
+pnpm dx:up                  # Postgres + Redis in Docker
+pnpm db:migrate-dev
+pnpm dev                    # http://localhost:3000
+```
 
-### Email editor
+Tests and checks for the web app:
 
-Check out the editor code for [here](https://github.com/usesend/usesend/tree/main/packages/email-editor). Editor is possible only because of the amazing tools and libraries.
+```sh
+pnpm --filter=web test:unit
+pnpm --filter=web typecheck
+```
 
-- [jsx-email](https://jsx.email/) - converts editor content to html
-- [maily.to](https://maily.to/) - useSend email editor is greatly inspired from maily.to
-- [tiptap](https://tiptap.dev/) - editor core
+## Self hosting
 
-## Local Development
+See [`deploy/DEPLOY.md`](./deploy/DEPLOY.md) and
+[`apps/docs/self-hosting/overview.mdx`](./apps/docs/self-hosting/overview.mdx).
+All configuration is in `.env.selfhost.example`.
 
-Follow our detailed guide to run useSend locally
+## License
 
-[https://docs.usesend.com/get-started/local](https://docs.usesend.com/get-started/local)
+GNU Affero General Public License v3.0, see [LICENSE](./LICENSE). If you run a
+modified version for users over a network, you must offer them its source code;
+the app links to it from the sidebar, the login page and unsubscribe pages.
 
-## Docker
-
-We provide a Docker container for useSend, which is published on both DockerHub and GitHub Container Registry.
-
-DockerHub: [https://hub.docker.com/r/usesend/usesend](https://hub.docker.com/r/usesend/usesend)
-
-GitHub Container Registry: [https://ghcr.io/usesend/usesend](https://ghcr.io/usesend/usesend)
-
-You can pull the Docker image from either of these registries and run it with your preferred container hosting provider.
-
-Please note that you will need to provide environment variables for connecting to the database, redis, aws and so forth.
-
-For detailed instructions on how to configure and run the Docker container, please refer to the Docker [Docker README](./docker/README.md) in the docker directory.
-
-## Self Hosting
-
-Checkout the [self-hosting guide](https://docs.usesend.com/self-hosting/overview) to learn how to run useSend on your own infrastructure.
-
-## Self Hosting with Railway
-
-Railway provides the quickest way to spin up useSend. Read the [Railway self-hosting guide](https://docs.usesend.com/self-hosting/railway) or deploy directly:
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy/usesend?utm_medium=integration&utm_source=docs&utm_campaign=usesend)
-
-## Star History
-
-<a href="https://star-history.com/#usesend/usesend&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=usesend/usesend&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=usesend/usesend&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=usesend/usesend&type=Date" />
- </picture>
-</a>
-
-## Sponsors
-
-We are grateful for the support of our sponsors.
-
-<a href="https://coderabbit.ai/?utm_source=useSend.com" target="_blank">
-  <img src="https://usesend.com/coderabbit-wordmark.png" alt="coderabbit.ai" style="width:200px;height:100px;">
-</a>
-
-### Bronze Sponsors
-
-<a href="https://sayr.io/?utm_source=useSend.com" target="_blank">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://cdn.doras.to/Sayr/Sayr%20white.png" />
-    <source media="(prefers-color-scheme: light)" srcset="https://cdn.doras.to/Sayr/sayr%20black.png" />
-    <img src="https://cdn.doras.to/Sayr/sayr%20black.png" alt="Sayr" style="width:180px;height:auto;">
-  </picture>
-</a>
-
-### Other Sponsors
-
-<a href="https://doras.to/?utm_source=useSend.com" target="_blank">
-  <img src="https://cdn.doras.to/doras/assets/05c5db48-cfba-49d7-82a1-5b4a3751aa40/49ca4647-65ed-412e-95c6-c475633d62af.png" alt="doras.to" style="width:60px;height:60px;">
-</a>
-
-<a href="https://github.com/anaclumos" target="_blank">
-  <img src="https://avatars.githubusercontent.com/u/31657298?v=4" alt="anaclumos" style="width:60px;height:60px;">
-</a>
-
-<a href="https://github.com/miguilimzero" target="_blank">
-  <img src="https://avatars.githubusercontent.com/u/35383529?v=4" alt="miguilimzero" style="width:60px;height:60px;">
-</a>
-
-<a href="https://x.com/tebayoso" target="_blank">
-  <img src="https://pbs.twimg.com/profile_images/1931051879007391744/5KhqgxUp_400x400.jpg" alt="tebayoso" style="width:60px;height:60px;">
-</a>
+Built on useSend by Koushik and the useSend contributors.

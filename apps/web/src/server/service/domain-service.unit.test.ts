@@ -39,6 +39,9 @@ const {
   mockResolveTxt: vi.fn(),
 }));
 
+// eslint-disable-next-line no-unused-vars -- parameter name in type signature
+type TxtCallback = (...args: [Error | null, string[][]?]) => void;
+
 function wasLastNotifiedStatusStored() {
   return mockRedis.set.mock.calls.some(
     (call) => call[0] === "domain:verification:last-notified-status:42",
@@ -177,11 +180,9 @@ describe("domain-service", () => {
       { user: { email: "alice@example.com" } },
       { user: { email: "bob@example.com" } },
     ]);
-    mockResolveTxt.mockImplementation(
-      (_name: string, cb: (err: Error | null, value?: string[][]) => void) => {
-        cb(null, [["v=DMARC1; p=none;"]]);
-      },
-    );
+    mockResolveTxt.mockImplementation((_name: string, cb: TxtCallback) => {
+      cb(null, [["v=DMARC1; p=none;"]]);
+    });
   });
 
   it("sends success status emails to all team members when a new domain becomes verified", async () => {
@@ -466,11 +467,9 @@ describe("domain-service provider integration", () => {
     mockRedis.del.mockReset();
     mockCheckDomainLimit.mockResolvedValue({ isLimitReached: false });
     mockRedis.set.mockResolvedValue("OK");
-    mockResolveTxt.mockImplementation(
-      (_name: string, cb: (err: Error | null, value?: string[][]) => void) => {
-        cb(null, [["v=DMARC1; p=none;"]]);
-      },
-    );
+    mockResolveTxt.mockImplementation((_name: string, cb: TxtCallback) => {
+      cb(null, [["v=DMARC1; p=none;"]]);
+    });
     mockDb.domain.create.mockImplementation(
       async ({ data }: { data: Partial<Domain> }) => createDomain(data),
     );
@@ -618,16 +617,14 @@ describe("domain-service provider integration", () => {
     mockRedis.mget.mockResolvedValue([null, null, null]);
     mockDb.domain.update.mockReset();
     mockDb.domain.update.mockResolvedValue(createDomain());
-    mockResolveTxt.mockImplementation(
-      (name: string, cb: (err: Error | null, value?: string[][]) => void) => {
-        cb(
-          null,
-          name === "example.com"
-            ? [["v=spf1 include:rp.oracleemaildelivery.com ~all"]]
-            : [["v=DMARC1; p=none;"]],
-        );
-      },
-    );
+    mockResolveTxt.mockImplementation((name: string, cb: TxtCallback) => {
+      cb(
+        null,
+        name === "example.com"
+          ? [["v=spf1 include:rp.oracleemaildelivery.com ~all"]]
+          : [["v=DMARC1; p=none;"]],
+      );
+    });
     mockGetDomainStatus.mockResolvedValue(
       providerStatus({
         status: DomainStatus.SUCCESS,

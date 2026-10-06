@@ -1,0 +1,51 @@
+---
+title: OCI Email Delivery notes
+description: "How Scribase Mail maps email events onto Oracle Cloud Email Delivery, and what is not available."
+---
+
+Scribase Mail uses Oracle Cloud Infrastructure (OCI) Email Delivery as its
+sending provider. OCI has no push notifications for delivery events, so some
+events are produced differently.
+
+## Event sources
+
+| Event                         | Source                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `email.queued`                | Scribase Mail queue                                                    |
+| `email.sent`                  | The OCI SMTP relay accepted the message                                |
+| `email.opened`                | Scribase Mail tracking pixel (per domain setting)                      |
+| `email.clicked`               | Scribase Mail signed redirect links (per domain setting)               |
+| `email.bounced`               | OCI suppression list, polled every 5 minutes (hard and soft bounces)   |
+| `email.complained`            | OCI suppression list, polled every 5 minutes                           |
+| `email.failed`                | SMTP relay refused the message, or retries were exhausted              |
+| `email.suppressed`            | Address is on your team suppression list                               |
+
+Bounces and complaints are matched to the original email by the Message-ID OCI
+records, or, when OCI does not record it, by the most recent email sent to that
+address in the last 7 days.
+
+## Not available
+
+- `email.delivered` and `email.delivery_delayed`: OCI does not report per-message
+  delivery. Emails stay in `SENT` unless a bounce or complaint arrives.
+- `email.rejected` and `email.rendering_failure` from the provider: refused
+  messages are reported as `email.failed`.
+- Bounces of addresses that OCI does not suppress (some soft bounces) are not
+  reported.
+- Bounce and complaint events arrive with up to a 5 minute delay.
+- Per-message tenant isolation and custom MAIL FROM domains are not configured;
+  SPF passes through OCI's return path.
+- Account level suppressions are shared across teams on the same OCI tenancy.
+  Removing an address from a team suppression list also removes it from OCI.
+
+## Approved senders
+
+OCI only relays mail whose From address is an approved sender. Scribase Mail
+creates the approved sender automatically on the first send from a new address
+on a verified domain. You can also add senders on the domain page.
+
+## Limits
+
+OCI applies daily and per-second sending limits to the tenancy. Set the send
+rate in **Admin > Email provider** at or below your OCI limit and request a
+limit increase from Oracle when needed.

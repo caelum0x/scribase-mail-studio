@@ -9,7 +9,7 @@ This document explains the webhook system architecture, including how events are
 │                                    EVENT SOURCES                                     │
 ├─────────────────────┬─────────────────────┬─────────────────────────────────────────┤
 │   Email Service     │   Contact Service   │           Domain Service                │
-│  (SES callbacks)    │   (CRUD operations) │         (verification, etc.)            │
+│ (provider events)   │   (CRUD operations) │         (verification, etc.)            │
 └─────────┬───────────┴──────────┬──────────┴──────────────────┬──────────────────────┘
           │                      │                             │
           │                      ▼                             │

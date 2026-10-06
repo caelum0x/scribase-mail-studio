@@ -45,7 +45,7 @@ export default function CampaignDetailsPage({
         }
         return false;
       },
-    }
+    },
   );
 
   const { data: latestEmails, isLoading: latestEmailsLoading } =
@@ -53,7 +53,7 @@ export default function CampaignDetailsPage({
       { campaignId: campaignId },
       {
         refetchInterval: 5000,
-      }
+      },
     );
 
   if (isLoading) {
@@ -267,7 +267,6 @@ export default function CampaignDetailsPage({
                   target="_blank"
                 >
                   <div className="bg-secondary p-0.5 px-2 rounded-md ">
-                    {campaign.contactBook?.emoji} &nbsp;
                     {campaign.contactBook?.name}
                   </div>
                 </Link>

@@ -1,0 +1,14 @@
+# mail.scribase.com -> Scribase Mail web (:4350, deploy/compose.scribase-mail.yml).
+# Copy to infra-box caddy/sites/ and add "scribase-mail" to CADDY_SITES.
+# TLS: Cloudflare Origin CA cert for "*.scribase.com, scribase.com" (same as scribase-api).
+
+mail.scribase.com {
+	import common scribase-mail
+	tls /etc/caddy/certs/scribase-origin.pem /etc/caddy/certs/scribase-origin.key
+	request_body {
+		max_size 45MB
+	}
+	reverse_proxy 127.0.0.1:4350 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}

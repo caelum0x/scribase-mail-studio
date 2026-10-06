@@ -19,6 +19,7 @@ import {
   UserRoundX,
   Webhook,
 } from "lucide-react";
+import { SOURCE_CODE_URL } from "~/lib/source-code";
 import { signOut } from "next-auth/react";
 
 import {
@@ -135,8 +136,8 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarGroupLabel>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold text-foreground font-mono">
-              useSend
+            <span className="text-lg font-semibold tracking-tight text-foreground">
+              Scribase Mail
             </span>
             <Badge variant="outline">Beta</Badge>
           </div>
@@ -256,9 +257,17 @@ export function AppSidebar() {
             ) : null}
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="Docs">
-                <Link href="https://docs.usesend.com" target="_blank">
+                <Link href="https://scribase.com/docs/mail" target="_blank">
                   <BookOpenText />
                   <span>Docs</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Source code">
+                <Link href={SOURCE_CODE_URL} target="_blank" rel="noreferrer">
+                  <Code />
+                  <span>Source code</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

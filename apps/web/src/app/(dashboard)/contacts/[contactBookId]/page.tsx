@@ -14,7 +14,6 @@ import AddContact from "./add-contact";
 import BulkUploadContacts from "./bulk-upload-contacts";
 import ContactList from "./contact-list";
 import { formatDistanceToNow } from "date-fns";
-import EmojiPicker, { Theme } from "emoji-picker-react";
 import {
   Popover,
   PopoverContent,
@@ -22,7 +21,6 @@ import {
 } from "@usesend/ui/src/popover";
 import { Button } from "@usesend/ui/src/button";
 import { Switch } from "@usesend/ui/src/switch";
-import { useTheme } from "@usesend/ui";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@usesend/ui/src/card";
@@ -41,6 +39,7 @@ import {
   Upload,
   Edit,
   Trash2,
+  BookUser,
 } from "lucide-react";
 import EditContactBook from "../edit-contact-book";
 import DeleteContactBook from "../delete-contact-book";
@@ -177,7 +176,6 @@ export default function ContactsPage({
   params: Promise<{ contactBookId: string }>;
 }) {
   const { contactBookId } = use(params);
-  const { theme } = useTheme();
 
   const contactBookDetailQuery = api.contacts.getContactBookDetails.useQuery({
     contactBookId: contactBookId,
@@ -225,38 +223,7 @@ export default function ContactsPage({
               <BreadcrumbItem>
                 <BreadcrumbPage className="text-xl">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className="p-0 hover:bg-transparent text-lg"
-                            type="button"
-                          >
-                            {contactBookDetailQuery.data?.emoji}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full rounded-none border-0 !bg-transparent !p-0 shadow-none drop-shadow-md">
-                          <EmojiPicker
-                            onEmojiClick={(emojiObject) => {
-                              // Handle emoji selection here
-                              // You might want to update the contactBook's emoji
-                              updateContactBookMutation.mutate({
-                                contactBookId: contactBookId,
-                                emoji: emojiObject.emoji,
-                              });
-                            }}
-                            theme={
-                              theme === "system"
-                                ? Theme.AUTO
-                                : theme === "dark"
-                                  ? Theme.DARK
-                                  : Theme.LIGHT
-                            }
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </span>
+                    <BookUser className="h-5 w-5 text-muted-foreground" />
                     <span className="text-xl">
                       {contactBookDetailQuery.data?.name}
                     </span>

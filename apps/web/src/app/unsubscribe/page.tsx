@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SOURCE_CODE_URL } from "~/lib/source-code";
 import type { ReactNode } from "react";
 import {
   getContactFromUnsubscribeLink,
@@ -76,13 +77,7 @@ async function unsubscribeAction(formData: FormData) {
   redirect(redirectUrl);
 }
 
-function MessageCard({
-  title,
-  message,
-}: {
-  title: string;
-  message: string;
-}) {
+function MessageCard({ title, message }: { title: string; message: string }) {
   return (
     <div className="w-full max-w-md space-y-4 rounded-xl border p-8 shadow">
       <h1 className="text-center text-2xl font-semibold">{title}</h1>
@@ -168,12 +163,21 @@ export default async function UnsubscribePage({
         <p>
           Powered by{" "}
           <a
-            href="https://usesend.com"
+            href="https://scribase.com"
             className="font-bold"
             target="_blank"
             rel="noreferrer"
           >
-            useSend
+            Scribase Mail
+          </a>
+          {" · "}
+          <a
+            href={SOURCE_CODE_URL}
+            className="text-muted-foreground hover:underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source code
           </a>
         </p>
       </div>

@@ -22,7 +22,9 @@ export function TeamInviteEmail({
   role = "member",
 }: TeamInviteEmailProps) {
   return (
-    <EmailLayout preview={`You've been invited to join ${teamName} on useSend`}>
+    <EmailLayout
+      preview={`You've been invited to join ${teamName} on Scribase Mail`}
+    >
       <EmailHeader logoUrl={logoUrl} title="You're invited!" />
 
       <Container style={{ padding: "20px 0", textAlign: "left" as const }}>
@@ -50,7 +52,8 @@ export function TeamInviteEmail({
           {inviterName
             ? `${inviterName} has invited you to join `
             : "You have been invited to join "}
-          <strong style={{ color: "#000000" }}>{teamName}</strong> on useSend
+          <strong style={{ color: "#000000" }}>{teamName}</strong> on Scribase
+          Mail
           {role && role !== "member" && (
             <span>
               {" "}
@@ -84,7 +87,7 @@ export function TeamInviteEmail({
 }
 
 export async function renderTeamInviteEmail(
-  props: TeamInviteEmailProps
+  props: TeamInviteEmailProps,
 ): Promise<string> {
   return render(<TeamInviteEmail {...props} />);
 }

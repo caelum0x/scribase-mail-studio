@@ -16,22 +16,26 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
+const TITLE = "Scribase Mail - Email API and dashboard";
+const DESCRIPTION =
+  "Send transactional and marketing email with a familiar REST API and a calm dashboard. Part of Scribase.";
+
 export const metadata: Metadata = {
-  title: "useSend – Open source email platform",
-  description: "Pay only for what you send, not for storing contacts",
+  title: TITLE,
+  description: DESCRIPTION,
   icons: [{ rel: "icon", url: "/favicon.ico" }],
-  metadataBase: new URL("https://usesend.com"),
+  metadataBase: new URL("https://mail.scribase.com"),
   openGraph: {
-    title: "useSend – Open source email platform",
-    description: "Pay only for what you send, not for storing contacts",
-    url: "https://usesend.com",
-    siteName: "useSend",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: "https://mail.scribase.com",
+    siteName: "Scribase Mail",
     images: [
       {
-        url: "https://uploads.usesend.com/logos/og.png",
-        width: 1200,
-        height: 630,
-        alt: "useSend – Open source email platform",
+        url: "/logo-squircle.png",
+        width: 650,
+        height: 650,
+        alt: "Scribase Mail",
         type: "image/png",
       },
     ],
@@ -39,17 +43,17 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
-    card: "summary_large_image",
-    title: "useSend – Open source email platform",
-    description: "Pay only for what you send, not for storing contacts",
-    images: ["https://uploads.usesend.com/logos/og.png"],
+    card: "summary",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/logo-squircle.png"],
   },
   robots: {
     index: true,
     follow: true,
   },
   alternates: {
-    canonical: "https://usesend.com",
+    canonical: "https://mail.scribase.com",
   },
 };
 

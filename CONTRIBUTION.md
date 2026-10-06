@@ -1,17 +1,17 @@
-# 🤝 Contributing to useSend
+# Contributing to Scribase Mail
 
-Thanks for your interest in contributing to **useSend**! We’re an open-source email infrastructure platform, and we’d love your help to make it even better. This guide will walk you through how to get started, set up the project locally, and submit contributions.
+Thanks for your interest in contributing to **Scribase Mail**! We’re an open-source email infrastructure platform, and we’d love your help to make it even better. This guide will walk you through how to get started, set up the project locally, and submit contributions.
 
 ---
 
-## 🧰 Getting Started
+## Getting Started
 
 All contributions begin with setting up the project locally. Follow the steps below to get started.
 
-📖 **Refer to the full setup guide:**  
-[https://docs.usesend.com/get-started/local](https://docs.usesend.com/get-started/local)
+**Refer to the full setup guide:**  
+[apps/docs/get-started/local.mdx](apps/docs/get-started/local.mdx)
 
-### ⚙️ Prerequisites
+### Prerequisites
 
 You’ll need:
 
@@ -19,17 +19,17 @@ You’ll need:
 - Node.js v18+
 - `pnpm` (use `corepack enable` to activate)
 - Docker (recommended)
-- AWS & Cloudflare accounts (free tiers are fine)
+- An Oracle Cloud account with Email Delivery (free tier is fine)
 
 ---
 
-## 🛠 Setting Up the Project
+## Setting Up the Project
 
 ### 1. Fork & Clone
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/usesend.git
-cd usesend
+git clone https://github.com/YOUR-USERNAME/scribase-mail-studio.git
+cd scribase-mail-studio
 ```
 
 ### 2. Install Dependencies
@@ -77,20 +77,25 @@ GITHUB_ID=your_client_id
 GITHUB_SECRET=your_client_secret
 ```
 
-### 5. AWS Credentials (Optional for local email)
+### 5. Oracle Cloud Email Delivery (Optional for local email)
 
-If you want to send real emails, add:
+If you want to send real emails, add your OCI SMTP credentials and API key:
 
 ```env
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
+SMTP_HOST=smtp.email.eu-frankfurt-1.oci.oraclecloud.com
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+OCI_TENANCY=ocid1.tenancy...
+OCI_USER=ocid1.user...
+OCI_FINGERPRINT=aa:bb:...
+OCI_PRIVATE_KEY_PATH=/path/to/oci_api_key.pem
 ```
 
-> You can skip this by using the `local-sen-sns` image for local-only email development.
+> Without them the app runs; sends fail at the provider step.
 
 ---
 
-## 🚀 Running the App
+## Running the App
 
 ### Option 1: Docker (Recommended)
 
@@ -138,7 +143,7 @@ pnpm dev
 
 ---
 
-### 📝 Run Documentation Locally
+### Run Documentation Locally
 
 ```bash
 pnpm dev:docs
@@ -146,7 +151,7 @@ pnpm dev:docs
 
 ---
 
-## 📂 Code Structure Overview
+## Code Structure Overview
 
 ```
 apps/
@@ -156,7 +161,7 @@ apps/
 
 packages/
 ├── eslint-config     # Shared ESLint rules
-├── sdk               # TypeScript SDK for useSend REST API
+├── sdk               # TypeScript SDK for Scribase Mail REST API
 ├── tailwind-config   # Shared Tailwind setup
 ├── typescript-config # Shared tsconfig
 ├── ui                # Shared UI components (buttons, modals, etc.)
@@ -164,7 +169,7 @@ packages/
 
 ---
 
-## 🧑‍💻 Making Contributions
+## Making Contributions
 
 1. **Create a Feature Branch**
 
@@ -196,19 +201,17 @@ git push origin feat/your-feature
 
 ---
 
-## 💬 Community and Support
+## Community and Support
 
-- **Discord**: [Join our server](https://discord.gg/BU8n8pJv8S)
-- **GitHub Discussions**: [Start a discussion](https://github.com/usesend/usesend/discussions)
-- **GitHub Issues**: [Report issues or bugs](https://github.com/usesend/usesend/issues)
+- **GitHub Discussions**: [Start a discussion](https://github.com/caelum0x/scribase-mail-studio/discussions)
+- **GitHub Issues**: [Report issues or bugs](https://github.com/caelum0x/scribase-mail-studio/issues)
 
 ---
 
-## 🙋 Questions?
+## Questions?
 
 Need help or unsure where to begin? Just ask!
 
-- Chat with us on [Discord](https://discord.gg/BU8n8pJv8S)
-- Open an [Issue](https://github.com/usesend/usesend/issues)
+- Open an [Issue](https://github.com/caelum0x/scribase-mail-studio/issues)
 
-We’re excited to see your ideas and contributions! 💌
+We’re excited to see your ideas and contributions! 

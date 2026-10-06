@@ -1,69 +1,54 @@
 ---
-title: Docker setup for useSend
-description: The following guide will walk you through setting up useSend using Docker. You can choose between a production setup using Docker Compose or a standalone container.
+title: Docker setup
+description: Run Scribase Mail with Docker Compose (web, Postgres and Redis).
 ---
 
 ## Prerequisites
 
-Before you begin, ensure that you have the following installed:
+- Docker with the Compose plugin
+- The environment variables from [Self hosting](/self-hosting/overview)
 
-- Docker
-- Docker Compose (if using the Docker Compose setup)
+## Docker Compose
 
-## Option 1: Production Docker Compose Setup
+The repository ships `deploy/compose.scribase-mail.yml` with the web app,
+Postgres and Redis, local volumes and memory limits (1.5 GB total).
 
-This setup includes PostgreSQL, Redis and the useSend application.
+1. Copy `.env.selfhost.example` to `deploy/.env` and fill in the values.
+2. Build the image on the server (it is built from `docker/Dockerfile`):
 
-1. Download the Docker Compose file from the useSend repository: [compose.yml](https://github.com/usesend/usesend/blob/main/docker/prod/compose.yml)
-2. Navigate to the directory containing the `compose.yml` file.
-3. Create a `.env` file in the same directory. Copy the contents of `.env.selfhost.example`
-4. Run the following command to start the containers:
-
-```
-docker-compose --env-file ./.env up -d
+```sh
+docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env build
 ```
 
-This will start the PostgreSQL database, Redis and the useSend application containers.
+3. Start it:
 
-5. Access the useSend application by visiting `http://localhost:3000` in your web browser.
-
-## Option 2: Standalone Docker Container
-
-If you prefer to host the useSend application on your container provider of choice, you can use the pre-built Docker image from DockerHub or GitHub's Package Registry. Note that you will need to provide your own database and SMTP host.
-
-1. Pull the useSend Docker image:
-
-```
-docker pull usesend/usesend
+```sh
+docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env up -d
 ```
 
-Or, if using GitHub's Package Registry:
+Database migrations run automatically when the web container starts. The app
+listens on `127.0.0.1:3000`; put a reverse proxy with TLS in front of it.
 
-```
-docker pull ghcr.io/usesend/usesend
-```
+## Standalone container
 
-2. Run the Docker container, providing the necessary environment variables for your database and SMTP host:
+You can also run only the web container against your own Postgres and Redis:
 
-```
+```sh
 docker run -d \
   -p 3000:3000 \
-  -e NEXTAUTH_URL="<your-nextauth-url>" \
-  -e NEXTAUTH_SECRET="<your-nextauth-secret>" \
-  -e DATABASE_URL="<your-next-private-database-url>" \
-  -e REDIS_URL="<your-next-private-redis-url>" \
-  -e AWS_ACCESS_KEY_ID="<your-next-private-aws-access-key-id>" \
-  -e AWS_SECRET_ACCESS_KEY="<your-next-private-aws-secret-access-key>" \
-  -e AWS_DEFAULT_REGION="<your-next-private-aws-region>" \
-  -e GITHUB_ID="<your-next-private-github-id>" \
-  -e GITHUB_SECRET="<your-next-private-github-secret>" \
-  usesend/usesend
+  -e NEXTAUTH_URL="https://mail.example.com" \
+  -e NEXTAUTH_SECRET="<secret>" \
+  -e DATABASE_URL="<postgres-url>" \
+  -e REDIS_URL="<redis-url>" \
+  -e OCI_REGION="eu-frankfurt-1" \
+  -e OCI_TENANCY="<tenancy-ocid>" \
+  -e OCI_USER="<user-ocid>" \
+  -e OCI_FINGERPRINT="<fingerprint>" \
+  -e OCI_PRIVATE_KEY="<pem>" \
+  -e SMTP_HOST="smtp.email.eu-frankfurt-1.oci.oraclecloud.com" \
+  -e SMTP_PORT="587" \
+  -e SMTP_USER="<smtp-user>" \
+  -e SMTP_PASS="<smtp-password>" \
+  -e FROM_EMAIL="noreply@mail.example.com" \
+  scribase-mail:latest
 ```
-
-Replace the placeholders with your actual database and AWS details.
-
-1. Access the useSend application by visiting the URL you provided in the `NEXTAUTH_URL` environment variable in your web browser.
-
-## Success
-
-You have now successfully set up useSend using Docker. You can start sending emails efficiently. If you encounter any issues or have further questions, please refer to the official useSend documentation or seek assistance from the community.

@@ -7,8 +7,8 @@ interface EmailFooterProps {
 }
 
 export function EmailFooter({
-  companyName = "useSend",
-  supportUrl = "mailto:hey@usesend.com",
+  companyName = "Scribase Mail",
+  supportUrl = "mailto:hello@scribase.com",
 }: EmailFooterProps) {
   return (
     <Container

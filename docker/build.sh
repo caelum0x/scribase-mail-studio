@@ -19,10 +19,6 @@ docker build -f "$SCRIPT_DIR/Dockerfile" \
     --progress=plain \
     --build-arg APP_VERSION="$APP_VERSION" \
     --build-arg GIT_SHA="$GIT_SHA" \
-    -t "unsend/unsend:latest" \
-    -t "unsend/unsend:$GIT_SHA" \
-    -t "unsend/unsend:$APP_VERSION" \
-    -t "ghcr.io/unsend-dev/unsend:latest" \
-    -t "ghcr.io/unsend-dev/unsend:$GIT_SHA" \
-    -t "ghcr.io/unsend-dev/unsend:$APP_VERSION" \
+    -t "scribase-mail:latest" \
+    -t "scribase-mail:$GIT_SHA" \
     "$MONOREPO_ROOT"

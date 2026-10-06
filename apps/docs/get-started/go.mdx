@@ -1,17 +1,17 @@
 ---
 title: Go
-description: "The useSend Go package lets you interact with the useSend API to send emails, manage contacts, and work with domains. This guide covers basic setup and usage."
+description: "The Scribase Mail Go package lets you interact with the Scribase Mail API to send emails, manage contacts, and work with domains. This guide covers basic setup and usage."
 icon: golang
 ---
 
 ## Prerequisites
 
-- [useSend API key](https://app.usesend.com/dev-settings/api-keys)
-- [Verified domain](https://app.usesend.com/domains)
+- [Scribase Mail API key](https://mail.scribase.com/dev-settings/api-keys)
+- [Verified domain](https://mail.scribase.com/domains)
 
 ## Installation
 
-Install the useSend Go SDK:
+Install the Scribase Mail Go SDK:
 ```bash
 go get github.com/usesend/usesend-go
 ```
@@ -41,11 +41,11 @@ API keys can also be supplied via the `USESEND_API_KEY` environment variable.
 
 ### Self-Hosted Setup
 
-If you are running a self-hosted version of useSend, provide the base URL using `WithBaseURL`.
+If you are running a self-hosted version of Scribase Mail, provide the base URL using `WithBaseURL`.
 ```go
 client, err := usesend.NewClient(
     "us_12345",
-    usesend.WithBaseURL("https://app.usesend.com"),
+    usesend.WithBaseURL("https://mail.scribase.com"),
 )
 if err != nil {
     log.Fatal(err)
@@ -72,9 +72,9 @@ resp, errResp, err := client.Emails.Send(
     usesend.SendEmailPayload{
         To:      []string{"hello@acme.com"},
         From:    "hello@company.com",
-        Subject: "useSend email",
-        HTML:    "<p>useSend is the best open source product to send emails</p>",
-        Text:    "useSend is the best open source product to send emails",
+        Subject: "Scribase Mail email",
+        HTML:    "<p>Scribase Mail is the best open source product to send emails</p>",
+        Text:    "Scribase Mail is the best open source product to send emails",
         Headers: map[string]string{
             "X-Campaign": "welcome",
         },
@@ -93,14 +93,14 @@ log.Printf("Email queued with ID: %s", resp.EmailID)
 ```
 
 <Info>
-Custom headers are forwarded as-is. useSend only manages the `X-Usesend-Email-ID` and `References` headers.
+Custom headers are forwarded as-is. Scribase Mail only manages the `X-Scribase-Email-ID` and `References` headers.
 </Info>
 
 ## Managing Contacts
 
 ### Get Contact Book ID
 
-Retrieve the contact book ID from the useSend dashboard.
+Retrieve the contact book ID from the Scribase Mail dashboard.
 
 ### Create Contacts
 ```go

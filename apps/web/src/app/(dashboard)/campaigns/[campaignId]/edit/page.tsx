@@ -412,13 +412,13 @@ function CampaignEditor({
                     >
                       <SelectTrigger className="w-[300px]">
                         {contactBook
-                          ? `${contactBook.emoji} ${contactBook.name}`
+                          ? contactBook.name
                           : "Select a contact book"}
                       </SelectTrigger>
                       <SelectContent>
                         {contactBooksQuery.data?.map((book) => (
                           <SelectItem key={book.id} value={book.id}>
-                            {book.emoji} {book.name}{" "}
+                            {book.name}{" "}
                             <span className="text-xs text-muted-foreground ml-4">
                               {" "}
                               {book._count.contacts} contacts

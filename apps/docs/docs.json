@@ -1,20 +1,20 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
-  "name": "useSend",
+  "name": "Scribase Mail",
   "colors": {
-    "primary": "#21453D",
-    "light": "#E6FAF5",
-    "dark": "#21453D"
+    "primary": "#111111",
+    "light": "#F5F5F5",
+    "dark": "#111111"
   },
   "background": {
     "color": {
-      "light": "#F5F5F5",
-      "dark": "#181825"
+      "light": "#FAFAFA",
+      "dark": "#0D0D0D"
     }
   },
   "fonts": {
-    "family": "IBM Plex Mono"
+    "family": "Inter"
   },
   "favicon": "/favicon.svg",
   "navigation": {
@@ -35,7 +35,10 @@
           },
           {
             "group": "Self Hosting",
-            "pages": ["self-hosting/overview", "self-hosting/railway"]
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/oci-email-delivery"
+            ]
           },
           {
             "group": "Guides",
@@ -53,7 +56,9 @@
         "groups": [
           {
             "group": "API Reference",
-            "pages": ["api-reference/introduction"]
+            "pages": [
+              "api-reference/introduction"
+            ]
           },
           {
             "group": "Emails",
@@ -119,28 +124,14 @@
             ]
           }
         ]
-      },
-      {
-        "tab": "Changelog",
-        "groups": [
-          {
-            "group": "Updates",
-            "pages": ["changelog"]
-          }
-        ]
       }
     ],
     "global": {
       "anchors": [
         {
-          "anchor": "GitHub",
-          "href": "https://github.com/usesend/usesend",
+          "anchor": "Source code",
+          "href": "https://github.com/caelum0x/scribase-mail-studio",
           "icon": "github"
-        },
-        {
-          "anchor": "Community",
-          "href": "https://discord.gg/BU8n8pJv8S",
-          "icon": "discord"
         }
       ]
     }
@@ -164,22 +155,27 @@
     "links": [
       {
         "label": "Support",
-        "href": "mailto:hey@usesend.com"
+        "href": "mailto:hello@scribase.com"
       }
     ],
     "primary": {
       "type": "button",
       "label": "Dashboard",
-      "href": "https://app.usesend.com"
+      "href": "https://mail.scribase.com"
     }
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/useSend_com",
-      "github": "https://github.com/usesend"
+      "github": "https://github.com/caelum0x/scribase-mail-studio"
     }
   },
   "contextual": {
-    "options": ["copy", "view", "chatgpt", "claude", "perplexity"]
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity"
+    ]
   }
 }

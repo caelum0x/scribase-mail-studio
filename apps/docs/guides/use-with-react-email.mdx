@@ -1,11 +1,11 @@
 ---
 title: Use with React Email
-description: "A guide on how to use useSend with React Email"
+description: "A guide on how to use Scribase Mail with React Email"
 ---
 
 ## Introduction
 
-[React Email](https://react.email/docs/introduction) is a library for building emails with React. In this guide, we will show you how to use useSend with React Email.
+[React Email](https://react.email/docs/introduction) is a library for building emails with React. In this guide, we will show you how to use Scribase Mail with React Email.
 
 ## Install dependencies
 
@@ -46,7 +46,7 @@ export function Email(props) {
 }
 ```
 
-## Send an email using useSend
+## Send an email using Scribase Mail
 
 ```ts
 import { UseSend } from "usesend-js";
@@ -60,7 +60,7 @@ const usesend = new UseSend("us_your_usesend_api_key");
 const response = await usesend.emails.send({
   to: "hello@usesend.com",
   from: "hello@usesend.com",
-  subject: "useSend email",
+  subject: "Scribase Mail email",
   html,
 });
 ```

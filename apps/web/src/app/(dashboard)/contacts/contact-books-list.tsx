@@ -2,6 +2,7 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { api } from "~/trpc/react";
+import { BookUser } from "lucide-react";
 import DeleteContactBook from "./delete-contact-book";
 import Link from "next/link";
 import EditContactBook from "./edit-contact-book";
@@ -44,7 +45,7 @@ export default function ContactBooksList() {
               <Link href={`/contacts/${contactBook.id}`} key={contactBook.id}>
                 <div className="flex justify-between items-center p-4 mb-4">
                   <div className="flex items-center gap-2">
-                    <div>{contactBook.emoji}</div>
+                    <BookUser className="h-4 w-4 text-muted-foreground" />
                     <div className="font-semibold truncate whitespace-nowrap overflow-ellipsis w-[180px]">
                       {contactBook.name}
                     </div>

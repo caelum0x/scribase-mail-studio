@@ -1,169 +1,90 @@
 import Image from "next/image";
 import Link from "next/link";
-// Replaced StatusBadge with external status badge image
+import {
+  APP_URL,
+  CONTACT_EMAIL,
+  DOCS_URL,
+  SCRIBASE_URL,
+  SOURCE_CODE_URL,
+  UPSTREAM_URL,
+} from "~/lib/site";
 
-const REPO = "usesend/usesend";
-const REPO_URL = `https://github.com/${REPO}`;
-const APP_URL = "https://app.usesend.com";
+const COLUMNS = [
+  {
+    title: "Product",
+    links: [
+      { label: "Dashboard", href: APP_URL },
+      { label: "Docs", href: DOCS_URL },
+      { label: "Scribase", href: SCRIBASE_URL },
+    ],
+  },
+  {
+    title: "Open source",
+    links: [
+      { label: "Source code", href: SOURCE_CODE_URL },
+      { label: "Built on useSend", href: UPSTREAM_URL },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { label: "Contact", href: `mailto:${CONTACT_EMAIL}` },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
+    ],
+  },
+];
 
 export function SiteFooter() {
   return (
-    <footer className="py-10 border-t border-border">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-          <div className="flex items-center gap-2 sm:w-56">
-            <Image
-              src="/logo-squircle.png"
-              alt="useSend"
-              width={24}
-              height={24}
-            />
-            <span className="text-primary font-mono">useSend</span>
-          </div>
-
-          <div className="sm:ml-auto flex items-start gap-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-12 gap-y-2 text-sm">
-              <div>
-                <div className="text-xs uppercase tracking-wider mb-2">
-                  Product
-                </div>
-                <ul className="space-y-2 text-muted-foreground">
-                  <li>
-                    <a
-                      href={APP_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Dashboard
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href={REPO_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      GitHub
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="https://docs.usesend.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Docs
-                    </a>
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <div className="text-xs uppercase tracking-wider  mb-2">
-                  Contact
-                </div>
-                <ul className="space-y-2 text-muted-foreground">
-                  <li>
-                    <a
-                      href="mailto:hey@usesend.com"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Email
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="https://x.com/useSend_com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      X (Twitter)
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="https://www.linkedin.com/company/use-send/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      LinkedIn
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="https://discord.com/invite/BU8n8pJv8S"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Discord
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="https://bsky.app/profile/usesend.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Bluesky
-                    </a>
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <div className="text-xs uppercase tracking-wider mb-2">
-                  Company
-                </div>
-                <ul className="space-y-2 text-muted-foreground">
-                  <li>
-                    <Link
-                      href="/privacy"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Privacy
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/terms"
-                      className="hover:text-foreground text-xs"
-                    >
-                      Terms
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <a
-              href="https://status.usesend.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Service status"
-              title="Service status"
-              className="inline-flex items-center"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="https://status.usesend.com/api/badge/2/status?upColor=30D9BD&style=plastic"
-                alt="Service status"
-                className="h-5"
-              />
-            </a>
-          </div>
+    <footer className="border-t border-border/60 py-10">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 sm:flex-row sm:items-start">
+        <div className="flex items-center gap-2 sm:w-56">
+          <Image
+            src="/logo-squircle.png"
+            alt="Scribase Mail"
+            width={24}
+            height={24}
+          />
+          <span className="font-medium tracking-tight">Scribase Mail</span>
         </div>
-
-        <div className="mt-6 text-xs text-muted-foreground mx-auto text-center">
-          © {new Date().getFullYear()} useSend. All rights reserved.
+        <div className="grid grid-cols-2 gap-x-12 gap-y-6 text-sm sm:ml-auto sm:grid-cols-3">
+          {COLUMNS.map((column) => (
+            <div key={column.title}>
+              <div className="mb-2 text-xs uppercase tracking-wider">
+                {column.title}
+              </div>
+              <ul className="space-y-2 text-muted-foreground">
+                {column.links.map((link) => (
+                  <li key={link.label}>
+                    {link.href.startsWith("/") ? (
+                      <Link
+                        href={link.href}
+                        className="text-xs hover:text-foreground"
+                      >
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs hover:text-foreground"
+                      >
+                        {link.label}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
+      <p className="mx-auto mt-10 max-w-6xl px-6 text-xs text-muted-foreground">
+        Scribase Mail is free software under the GNU AGPL-3.0, derived from
+        useSend. Part of Scribase, the open source Postgres backend platform.
+      </p>
     </footer>
   );
 }

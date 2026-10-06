@@ -52,7 +52,7 @@ function shouldForwardHeader(name: string): boolean {
 }
 
 /**
- * Extracts end-to-end headers that remain meaningful after useSend rebuilds
+ * Extracts end-to-end headers that remain meaningful after Scribase Mail rebuilds
  * the MIME message. Repeated headers use the last value because the public API
  * currently accepts a string record rather than an ordered header list.
  */

@@ -16,7 +16,7 @@ interface OtpEmailProps {
 export function OtpEmail({
   otpCode,
   loginUrl,
-  hostName = "useSend",
+  hostName = "Scribase Mail",
   logoUrl,
 }: OtpEmailProps) {
   return (
@@ -45,7 +45,8 @@ export function OtpEmail({
             textAlign: "left" as const,
           }}
         >
-          Use the verification code below to sign in to your useSend account:
+          Use the verification code below to sign in to your Scribase Mail
+          account:
         </Text>
 
         <Container

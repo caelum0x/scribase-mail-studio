@@ -102,7 +102,7 @@ export function getApp() {
     if (currentRequests > limit) {
       c.res.headers.set(
         "Retry-After",
-        String(ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS)
+        String(ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS),
       );
       throw new UnsendApiError({
         code: "RATE_LIMITED",
@@ -118,7 +118,7 @@ export function getApp() {
     openapi: "3.0.0",
     info: {
       version: "1.0.0",
-      title: "useSend API",
+      title: "Scribase Mail API",
     },
     servers: [{ url: `${env.NEXTAUTH_URL}/api` }],
   }));

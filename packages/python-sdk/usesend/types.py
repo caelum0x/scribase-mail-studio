@@ -22,7 +22,7 @@ DomainStatus = Literal[
     "TEMPORARY_FAILURE",
 ]
 
-DNSRecordType = Literal["MX", "TXT"]
+DNSRecordType = Literal["CNAME", "TXT", "MX"]
 
 
 class DNSRecord(TypedDict, total=False):
@@ -46,7 +46,7 @@ class Domain(TypedDict, total=False):
     region: str
     clickTracking: bool
     openTracking: bool
-    publicKey: str
+    dkimSelector: Optional[str]
     dkimStatus: Optional[str]
     spfDetails: Optional[str]
     createdAt: str
@@ -76,7 +76,7 @@ class DomainCreateResponse(TypedDict, total=False):
     region: str
     clickTracking: bool
     openTracking: bool
-    publicKey: str
+    dkimSelector: Optional[str]
     dkimStatus: Optional[str]
     spfDetails: Optional[str]
     createdAt: str
@@ -683,7 +683,6 @@ class DomainWebhookPayload(TypedDict, total=False):
     clickTracking: bool
     openTracking: bool
     subdomain: Optional[str]
-    sesTenantId: Optional[str]
     dkimStatus: Optional[str]
     spfDetails: Optional[str]
     dmarcAdded: Optional[bool]

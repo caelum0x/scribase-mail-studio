@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CreditCard } from "lucide-react";
 import { Button } from "@usesend/ui/src/button";
 import { Card } from "@usesend/ui/src/card";
 import { Spinner } from "@usesend/ui/src/spinner";
@@ -95,7 +96,7 @@ export default function SettingsPage() {
                   {subscription.paymentMethod &&
                   subscription.paymentMethod !== "null" ? (
                     <>
-                      <span>💳</span>
+                      <CreditCard className="h-4 w-4" />
                       <span className="capitalize">
                         {paymentMethod?.card?.brand || ""} ••••{" "}
                         {paymentMethod?.card?.last4 || ""}

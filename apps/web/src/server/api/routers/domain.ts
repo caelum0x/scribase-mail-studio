@@ -120,7 +120,7 @@ export const domainRouter = createTRPCRouter({
         teamId: team.id,
         to: user.email,
         from: `hello@${domain.name}`,
-        subject: "useSend test email",
+        subject: "Scribase Mail test email",
         text: "hello,\n\nThis is a test email from Scribase Mail.\n\nhttps://scribase.com",
         html: "<p>hello,</p><p>This is a test email from Scribase Mail.</p><p><a href='https://scribase.com'>scribase.com</a></p>",
       });

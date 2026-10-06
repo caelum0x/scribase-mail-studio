@@ -25,6 +25,7 @@ import { Input } from "@usesend/ui/src/input";
 import { BuiltInProviderType } from "next-auth/providers/index";
 import Spinner from "@usesend/ui/src/spinner";
 import Link from "next/link";
+import { SOURCE_CODE_URL } from "~/lib/source-code";
 import { useSearchParams as useNextSearchParams } from "next/navigation";
 import { GENERIC_AUTH_ERROR_MESSAGE, getAuthErrorMessage } from "./auth-error";
 
@@ -155,17 +156,17 @@ export default function LoginPage({
       <div className="flex flex-col gap-6">
         <Image
           src={"/logo-squircle.png"}
-          alt="useSend"
+          alt="Scribase Mail"
           width={50}
           height={50}
           className="mx-auto"
         />
         <div>
           <p className="text-2xl text-center font-semibold">
-            {isSignup ? "Create new account" : "Sign into useSend"}
+            {isSignup ? "Create new account" : "Sign into Scribase Mail"}
           </p>
           <p className="text-center mt-2 text-sm text-muted-foreground">
-            {isSignup ? "Already have an account?" : "New to useSend?"}
+            {isSignup ? "Already have an account?" : "New to Scribase Mail?"}
             <Link
               href={isSignup ? "/login" : "/signup"}
               className=" text-foreground hover:underline ml-1"
@@ -315,6 +316,14 @@ export default function LoginPage({
           )}
         </div>
       </div>
+      <a
+        href={SOURCE_CODE_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="fixed bottom-6 text-xs text-muted-foreground hover:underline"
+      >
+        Source code (AGPL-3.0)
+      </a>
     </main>
   );
 }

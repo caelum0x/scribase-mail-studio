@@ -51,7 +51,6 @@
     "bullmq": "^5.51.1",
     "chrono-node": "^2.8.0",
     "date-fns": "^4.1.0",
-    "emoji-picker-react": "^4.12.2",
     "framer-motion": "^12.9.2",
     "hono": "^4.12.19",
     "html-to-text": "^9.0.5",

@@ -114,7 +114,7 @@ export function DomainVerificationStatusEmail({
         >
           Thanks,
           <br />
-          useSend Team
+          The Scribase team
         </Text>
       </Container>
 
