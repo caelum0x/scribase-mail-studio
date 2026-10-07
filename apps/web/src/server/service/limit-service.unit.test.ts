@@ -32,7 +32,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function team(overrides: Record<string, unknown>) {
   return {
     id: 1,
-    plan: "BASIC",
+    plan: "PRO",
     isActive: true,
     isBlocked: false,
     isVerified: false,

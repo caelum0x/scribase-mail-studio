@@ -3,6 +3,7 @@ import { Button } from "@usesend/ui/src/button";
 import { SiteFooter } from "~/components/SiteFooter";
 import { TopNav } from "~/components/TopNav";
 import { FeatureCardPlain } from "~/components/FeatureCardPlain";
+import { Pricing } from "~/components/Pricing";
 import CodeExample from "~/components/CodeExample";
 import {
   APP_URL,
@@ -19,6 +20,7 @@ export default function Page() {
       <Hero />
       <Features />
       <CodeExample />
+      <Pricing />
       <PartOfScribase />
       <SiteFooter />
     </main>

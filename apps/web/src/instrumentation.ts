@@ -18,7 +18,7 @@ export async function register() {
     await EmailQueueService.init();
 
     /**
-     * Send usage data to Stripe
+     * Report usage to the Dodo Payments meter
      */
     if (isCloud()) {
       await import("~/server/jobs/usage-job");

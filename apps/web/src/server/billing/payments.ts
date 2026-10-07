@@ -1,215 +1,177 @@
-import Stripe from "stripe";
+import type { Plan } from "@prisma/client";
 import { env } from "~/env";
 import { isEntitledSubscriptionStatus } from "~/lib/subscription-status";
 import { db } from "../db";
-import { sendSubscriptionConfirmationEmail } from "../mailer";
-import { TeamService } from "../service/team-service";
 import { logger } from "../logger/log";
+import { TeamService } from "../service/team-service";
+import {
+  BillingNotConfiguredError,
+  getDodoClient,
+  getProductIds,
+  isBillingConfigured,
+} from "./dodo-client";
+import { type PaidPlan, isUpgrade, productIdForPlan } from "./plan-mapping";
 
-export function getStripe() {
-  if (!env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY is not set");
+export class BillingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BillingError";
   }
-
-  return new Stripe(env.STRIPE_SECRET_KEY);
 }
 
-async function createCustomerForTeam(teamId: number) {
-  const stripe = getStripe();
-  const customer = await stripe.customers.create({ metadata: { teamId } });
+function requireProductId(plan: PaidPlan): string {
+  const productId = productIdForPlan(plan, getProductIds());
+  if (!productId) {
+    throw new BillingNotConfiguredError(`No Dodo product configured for ${plan}`);
+  }
+  return productId;
+}
+
+async function getTeamOrThrow(teamId: number) {
+  const team = await db.team.findUnique({ where: { id: teamId } });
+  if (!team) throw new BillingError("Team not found");
+  return team;
+}
+
+/** The team's current paid subscription in our records, if any. */
+export async function getLiveSubscription(teamId: number) {
+  const subs = await db.subscription.findMany({
+    where: { teamId, provider: "dodo" },
+    orderBy: { updatedAt: "desc" },
+  });
+  return subs.find((s) => isEntitledSubscriptionStatus(s.status)) ?? null;
+}
+
+async function resolveBillingEmail(team: {
+  id: number;
+  billingEmail: string | null;
+}): Promise<string> {
+  if (team.billingEmail) return team.billingEmail;
+  const users = await TeamService.getTeamUsers(team.id);
+  const admin = users.find((tu) => tu.role === "ADMIN" && tu.user?.email);
+  const email = admin?.user?.email ?? users.find((tu) => tu.user?.email)?.user?.email;
+  if (!email) throw new BillingError("Set a billing email first");
+  return email;
+}
+
+/** Dodo customer id for the team, creating the customer on first use. */
+async function ensureCustomer(teamId: number): Promise<string> {
+  const team = await getTeamOrThrow(teamId);
+  if (team.billingCustomerId) return team.billingCustomerId;
+
+  const email = await resolveBillingEmail(team);
+  const customer = await getDodoClient().customers.create({
+    email,
+    name: team.name,
+    metadata: { teamId: String(team.id), app: "scribase-mail" },
+  });
 
   await TeamService.updateTeam(teamId, {
-    billingEmail: customer.email,
-    stripeCustomerId: customer.id,
+    billingCustomerId: customer.customer_id,
+    billingEmail: team.billingEmail ?? email,
   });
-
-  return customer;
+  return customer.customer_id;
 }
 
-export async function createCheckoutSessionForTeam(teamId: number) {
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-  });
+/**
+ * Hosted Dodo checkout for a paid plan. Access is granted only by the
+ * verified subscription.active webhook, never by the return URL.
+ */
+export async function createCheckoutSessionForTeam(
+  teamId: number,
+  plan: PaidPlan,
+): Promise<{ url: string }> {
+  if (!isBillingConfigured()) throw new BillingNotConfiguredError();
+  const productId = requireProductId(plan);
 
-  if (!team) {
-    throw new Error("Team not found");
+  if (await getLiveSubscription(teamId)) {
+    throw new BillingError(
+      "Team already has a subscription. Change the plan instead.",
+    );
   }
 
-  if (team.isActive && team.plan !== "FREE") {
-    throw new Error("Team is already active");
-  }
-
-  const stripe = getStripe();
-
-  let customerId = team.stripeCustomerId;
-
-  if (!customerId) {
-    const customer = await createCustomerForTeam(teamId);
-    customerId = customer.id;
-  }
-
-  if (
-    !env.STRIPE_BASIC_PRICE_ID ||
-    !env.STRIPE_BASIC_USAGE_PRICE_ID ||
-    !customerId
-  ) {
-    throw new Error("Stripe prices are not set");
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [
-      {
-        price: env.STRIPE_BASIC_PRICE_ID,
-        quantity: 1,
-      },
-      {
-        price: env.STRIPE_BASIC_USAGE_PRICE_ID,
-      },
-    ],
-    success_url: `${env.NEXTAUTH_URL}/payments?success=true&session_id={CHECKOUT_SESSION_ID}`,
+  const customerId = await ensureCustomer(teamId);
+  const session = await getDodoClient().checkoutSessions.create({
+    product_cart: [{ product_id: productId, quantity: 1 }],
+    customer: { customer_id: customerId },
+    return_url: `${env.NEXTAUTH_URL}/payments?success=true`,
     cancel_url: `${env.NEXTAUTH_URL}/settings/billing`,
-    metadata: {
-      teamId,
-    },
-    client_reference_id: teamId.toString(),
+    metadata: { teamId: String(teamId), plan, app: "scribase-mail" },
   });
 
-  return session;
+  if (!session.checkout_url) {
+    throw new BillingError("Checkout could not be started");
+  }
+  return { url: session.checkout_url };
 }
 
-function getPlanFromPriceIds(priceIds: string[]) {
-  if (
-    (env.STRIPE_BASIC_PRICE_ID &&
-      priceIds.includes(env.STRIPE_BASIC_PRICE_ID)) ||
-    (env.STRIPE_LEGACY_BASIC_PRICE_ID &&
-      priceIds.includes(env.STRIPE_LEGACY_BASIC_PRICE_ID))
-  ) {
-    return "BASIC";
+/** Self-service portal: invoices, payment method, cancel. */
+export async function getManageSessionUrl(teamId: number): Promise<string> {
+  if (!isBillingConfigured()) throw new BillingNotConfiguredError();
+  const team = await getTeamOrThrow(teamId);
+  if (!team.billingCustomerId) {
+    throw new BillingError("Team has no billing account yet");
   }
-
-  return "FREE";
+  const portal = await getDodoClient().customers.customerPortal.create(
+    team.billingCustomerId,
+    { return_url: `${env.NEXTAUTH_URL}/settings/billing` },
+  );
+  return portal.link;
 }
 
-export async function getManageSessionUrl(teamId: number) {
-  const team = await db.team.findUnique({
-    where: { id: teamId },
+/**
+ * Switch an existing subscription between paid plans. Upgrades are charged
+ * prorated immediately; downgrades are credited prorated. The team's plan is
+ * updated by the subscription.plan_changed webhook.
+ */
+export async function changeTeamPlan(
+  teamId: number,
+  plan: PaidPlan,
+): Promise<void> {
+  if (!isBillingConfigured()) throw new BillingNotConfiguredError();
+  const productId = requireProductId(plan);
+  const live = await getLiveSubscription(teamId);
+  if (!live) throw new BillingError("No active subscription to change");
+  if (live.productId === productId) return;
+
+  await getDodoClient().subscriptions.changePlan(live.id, {
+    product_id: productId,
+    quantity: 1,
+    proration_billing_mode: "prorated_immediately",
+    on_payment_failure: isUpgrade(live.plan as Plan, plan)
+      ? "prevent_change"
+      : "apply_change",
   });
-
-  if (!team) {
-    throw new Error("Team not found");
-  }
-
-  if (!team.stripeCustomerId) {
-    throw new Error("Team has no Stripe customer ID");
-  }
-
-  const stripe = getStripe();
-
-  const subscriptions = await stripe.billingPortal.sessions.create({
-    customer: team.stripeCustomerId,
-    return_url: `${env.NEXTAUTH_URL}`,
-  });
-
-  return subscriptions.url;
+  logger.info({ teamId, plan }, "[Billing]: Requested plan change");
 }
 
-export async function syncStripeData(customerId: string) {
-  const stripe = getStripe();
+/** Cancel at the end of the paid period; the team keeps its plan until then. */
+export async function cancelTeamSubscription(teamId: number): Promise<void> {
+  if (!isBillingConfigured()) throw new BillingNotConfiguredError();
+  const live = await getLiveSubscription(teamId);
+  if (!live) throw new BillingError("No active subscription to cancel");
 
-  const team = await db.team.findUnique({
-    where: { stripeCustomerId: customerId },
+  await getDodoClient().subscriptions.update(live.id, {
+    cancel_at_next_billing_date: true,
   });
-
-  if (!team) {
-    return;
-  }
-
-  const wasPaid = team.isActive && team.plan !== "FREE";
-
-  const subscriptions = await stripe.subscriptions.list({
-    customer: customerId,
-    limit: 1,
-    status: "all",
-    expand: ["data.default_payment_method"],
+  await db.subscription.update({
+    where: { id: live.id },
+    data: { cancelAtPeriodEnd: live.currentPeriodEnd ?? new Date() },
   });
+  logger.info({ teamId }, "[Billing]: Scheduled cancellation");
+}
 
-  const subscription = subscriptions.data[0];
+/** Undo a scheduled cancellation. */
+export async function resumeTeamSubscription(teamId: number): Promise<void> {
+  if (!isBillingConfigured()) throw new BillingNotConfiguredError();
+  const live = await getLiveSubscription(teamId);
+  if (!live) throw new BillingError("No active subscription to resume");
 
-  if (!subscription) {
-    return;
-  }
-
-  if (!subscription.items.data[0]) {
-    return;
-  }
-
-  const priceIds = subscription.items.data
-    .map((item) => item.price?.id)
-    .filter((id): id is string => Boolean(id));
-
-  const nextPlan = getPlanFromPriceIds(priceIds);
-  const isEntitled = isEntitledSubscriptionStatus(subscription.status);
-  const isNowPaid = subscription.status === "active" && nextPlan !== "FREE";
-  const shouldSendSubscriptionConfirmation = !wasPaid && isNowPaid;
-
-  await db.subscription.upsert({
-    where: { id: subscription.id },
-    update: {
-      status: subscription.status,
-      priceId: subscription.items.data[0]?.price?.id || "",
-      priceIds: priceIds,
-      currentPeriodEnd: new Date(
-        subscription.items.data[0]?.current_period_end * 1000,
-      ),
-      currentPeriodStart: new Date(
-        subscription.items.data[0]?.current_period_start * 1000,
-      ),
-      cancelAtPeriodEnd: subscription.cancel_at
-        ? new Date(subscription.cancel_at * 1000)
-        : null,
-      paymentMethod: JSON.stringify(subscription.default_payment_method),
-      teamId: team.id,
-    },
-    create: {
-      id: subscription.id,
-      status: subscription.status,
-      priceId: subscription.items.data[0]?.price?.id || "",
-      priceIds: priceIds,
-      currentPeriodEnd: new Date(
-        subscription.items.data[0]?.current_period_end * 1000,
-      ),
-      currentPeriodStart: new Date(
-        subscription.items.data[0]?.current_period_start * 1000,
-      ),
-      cancelAtPeriodEnd: subscription.cancel_at
-        ? new Date(subscription.cancel_at * 1000)
-        : null,
-      paymentMethod: JSON.stringify(subscription.default_payment_method),
-      teamId: team.id,
-    },
+  await getDodoClient().subscriptions.update(live.id, {
+    cancel_at_next_billing_date: false,
   });
-
-  await TeamService.updateTeam(team.id, {
-    plan: subscription.status === "canceled" ? "FREE" : nextPlan,
-    isActive: isEntitled,
+  await db.subscription.update({
+    where: { id: live.id },
+    data: { cancelAtPeriodEnd: null },
   });
-
-  if (shouldSendSubscriptionConfirmation) {
-    try {
-      const teamUsers = await TeamService.getTeamUsers(team.id);
-      await Promise.all(
-        teamUsers
-          .map((tu) => tu.user?.email)
-          .filter((email): email is string => Boolean(email))
-          .map((email) => sendSubscriptionConfirmationEmail(email)),
-      );
-    } catch (err) {
-      logger.error(
-        { err, teamId: team.id },
-        "[Billing]: Failed sending subscription confirmation email",
-      );
-    }
-  }
 }

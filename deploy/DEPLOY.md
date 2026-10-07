@@ -79,7 +79,7 @@ cd /opt/scribase-mail
 cp deploy/.env.example deploy/.env && chmod 600 deploy/.env
 # Fill in: NEXTAUTH_SECRET (openssl rand -base64 32), POSTGRES_PASSWORD
 # (openssl rand -hex 24), SMTP_USER/SMTP_PASS, OCI_TENANCY/OCI_USER/
-# OCI_FINGERPRINT, ADMIN_EMAIL, GIT_SHA=<commit>.
+# OCI_FINGERPRINT, ADMIN_EMAIL, GIT_SHA=<commit>. Billing (optional): section 8.
 ```
 
 ## 4. Build and start
@@ -186,6 +186,67 @@ RESEND_BASE_URL=https://mail-api.scribase.com RESEND_API_KEY=$KEY node -e '
 0 3 * * * docker exec scribase-mail-postgres pg_dump -U scribase_mail -Fc scribase_mail \
   > /srv/scribase-mail/backups/$(date +\%F).dump && find /srv/scribase-mail/backups -mtime +14 -delete
 ```
+
+## 8. Billing (Dodo Payments)
+
+Billing is optional. Without the Dodo keys the app runs normally and the
+billing page shows "Billing not configured". Prices and quotas live in one
+file, `packages/lib/src/constants/pricing.ts`; the Dodo products below must
+match it (Free 3,000/mo + 100/day + 1 domain; Pro $20 with 50,000/mo and 10
+domains; Scale $90 with 100,000/mo and 1,000 domains; $0.90 per 1,000 extra
+emails on Pro and Scale).
+
+Do everything in **test mode** first, then repeat in live mode.
+
+1. **Meter** (Dashboard > Products > Meters > Create):
+   name `Emails sent`, event name `email.sent`, aggregation **Sum** over
+   metadata key `emails`, unit `emails`. Copy the id (`mtr_...`).
+   The app reports one event per team per UTC day
+   (id `scribase-mail:usage:<teamId>:<date>`, so repeats are ignored).
+2. **Pro product** (Products > Create > Subscription): name
+   `Scribase Mail Pro`, $20.00 every 1 month, tax category SaaS. Under usage
+   pricing attach the `Emails sent` meter: price per unit `0.0009` (=$0.90
+   per 1,000), free threshold `50000`. Copy the id (`pdt_...`).
+3. **Scale product**: `Scribase Mail Scale`, $90.00 monthly, same meter at
+   `0.0009`, free threshold `100000`. Copy the id.
+4. **Customer portal** (Settings > Customer portal): enable cancel and
+   payment-method update. Optionally put Pro and Scale in one product
+   collection to allow switching from the portal.
+5. **Webhook** (Developer > Webhooks > Create): URL
+   `https://mail.scribase.com/api/webhook/dodo`. Subscribe to
+   `subscription.active`, `subscription.renewed`, `subscription.updated`,
+   `subscription.plan_changed`, `subscription.on_hold`,
+   `subscription.cancelled`, `subscription.failed`, `subscription.expired`,
+   `payment.succeeded`, `payment.failed`. Copy the signing secret
+   (`whsec_...`). The Dodo business is shared with other products: events for
+   other product ids are acknowledged and ignored.
+6. **API key** (Developer > API keys): create a key for this app.
+7. On the box, add to `deploy/.env` (never commit it):
+
+```sh
+DODO_PAYMENTS_API_KEY=...
+DODO_PAYMENTS_WEBHOOK_KEY=whsec_...
+DODO_PAYMENTS_ENVIRONMENT=test_mode   # live_mode with live keys
+DODO_PRODUCT_ID_PRO=pdt_...
+DODO_PRODUCT_ID_SCALE=pdt_...
+DODO_USAGE_METER_ID=mtr_...
+DODO_USAGE_EVENT_NAME=email.sent
+```
+
+   then `docker compose ... up -d web` (no rebuild needed).
+8. **Test**: Settings > Billing > Pro > Upgrade, pay with a Dodo test card.
+   The team flips to Pro after `subscription.active` (the return page polls).
+   Dashboard > Webhooks > delivery log should show 200s; a resent delivery
+   returns `{"status":"duplicate"}`. After a day of sending, Dashboard >
+   Meters shows the `email.sent` events.
+9. **Go live**: recreate meter, products and webhook in live mode, swap all
+   seven values, set `DODO_PAYMENTS_ENVIRONMENT=live_mode`, restart web.
+
+Behaviour: `active`/`past_due` grant the plan; `on_hold` (renewal failed)
+keeps the plan but applies Free limits until the payment is fixed;
+`cancelled`/`expired`/`failed` return the team to Free. Cancel from the app
+ends the plan at the end of the paid period. Warm-up caps for new teams still
+apply on every plan (the stricter limit wins).
 
 ## Rollback
 

@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { isEntitledSubscriptionStatus } from "~/lib/subscription-status";
 
-describe("isEntitledSubscriptionStatus", () => {
-  it("treats retrying subscriptions as entitled", () => {
+describe("isEntitledSubscriptionStatus (Dodo statuses)", () => {
+  it("treats active and past_due subscriptions as entitled", () => {
+    expect(isEntitledSubscriptionStatus("active")).toBe(true);
     expect(isEntitledSubscriptionStatus("past_due")).toBe(true);
   });
 
-  it("treats active and trialing subscriptions as entitled", () => {
-    expect(isEntitledSubscriptionStatus("active")).toBe(true);
-    expect(isEntitledSubscriptionStatus("trialing")).toBe(true);
-  });
-
-  it("treats exhausted or incomplete subscriptions as not entitled", () => {
-    expect(isEntitledSubscriptionStatus("unpaid")).toBe(false);
-    expect(isEntitledSubscriptionStatus("canceled")).toBe(false);
-    expect(isEntitledSubscriptionStatus("incomplete")).toBe(false);
+  it("treats held, ended or pending subscriptions as not entitled", () => {
+    for (const status of [
+      "on_hold",
+      "paused",
+      "pending",
+      "cancelled",
+      "failed",
+      "expired",
+    ]) {
+      expect(isEntitledSubscriptionStatus(status)).toBe(false);
+    }
     expect(isEntitledSubscriptionStatus(null)).toBe(false);
+    expect(isEntitledSubscriptionStatus(undefined)).toBe(false);
   });
 });

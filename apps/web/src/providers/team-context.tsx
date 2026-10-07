@@ -9,8 +9,9 @@ type Team = {
   name: string;
   createdAt: Date;
   updatedAt: Date;
-  plan: "FREE" | "BASIC";
-  stripeCustomerId?: string | null;
+  plan: "FREE" | "PRO" | "SCALE";
+  isActive?: boolean;
+  billingCustomerId?: string | null;
   billingEmail?: string | null;
 };
 

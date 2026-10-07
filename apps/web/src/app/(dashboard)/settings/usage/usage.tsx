@@ -5,18 +5,17 @@ import { Card } from "@usesend/ui/src/card";
 import Spinner from "@usesend/ui/src/spinner";
 import { format } from "date-fns";
 import {
-  getCost,
-  PLAN_CREDIT_UNITS,
-  UNIT_PRICE,
-  USAGE_UNIT_PRICE,
-} from "~/lib/usage";
+  getOverageCostUsd,
+  getOverageEmails,
+  PRICING_PLANS,
+} from "@usesend/lib/src/constants/pricing";
 import { useTeam } from "~/providers/team-context";
 import { EmailUsageType } from "@prisma/client";
 import { PlanDetails } from "~/components/payments/PlanDetails";
 import { UpgradeButton } from "~/components/payments/UpgradeButton";
 import { Progress } from "@usesend/ui/src/progress";
 
-const FREE_PLAN_LIMIT = 3000;
+const FREE_PLAN_LIMIT = PRICING_PLANS.FREE.emailsPerMonth;
 
 function FreePlanUsage({
   usage,
@@ -25,7 +24,7 @@ function FreePlanUsage({
   usage: { type: EmailUsageType; sent: number }[];
   dayUsage: { type: EmailUsageType; sent: number }[];
 }) {
-  const DAILY_LIMIT = 100;
+  const DAILY_LIMIT = PRICING_PLANS.FREE.emailsPerDay;
   const totalSent = usage?.reduce((acc, item) => acc + item.sent, 0) || 0;
   const monthlyPercentageUsed = (totalSent / FREE_PLAN_LIMIT) * 100;
 
@@ -119,11 +118,13 @@ function PaidPlanUsage({
 }) {
   const { currentTeam } = useTeam();
 
-  if (currentTeam?.plan === "FREE") return null;
+  if (!currentTeam || currentTeam.plan === "FREE") return null;
 
-  const totalCost =
-    usage?.reduce((acc, item) => acc + getCost(item.sent, item.type), 0) || 0;
-  const planCreditCost = PLAN_CREDIT_UNITS[currentTeam?.plan!] * UNIT_PRICE;
+  const plan = PRICING_PLANS[currentTeam.plan];
+  const totalSent = usage?.reduce((acc, item) => acc + item.sent, 0) || 0;
+  const included = plan.emailsPerMonth;
+  const extra = getOverageEmails(plan.id, totalSent);
+  const overageCost = getOverageCostUsd(plan.id, totalSent);
 
   return (
     <Card className="p-6">
@@ -134,54 +135,38 @@ function PaidPlanUsage({
               key={item.type}
               className="flex justify-between items-center border-b pb-3 last:border-0 last:pb-0"
             >
-              <div>
-                <div className="font-medium capitalize">
-                  {item.type.toLowerCase()}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  <span className="font-mono">
-                    {item.sent.toLocaleString()}
-                  </span>{" "}
-                  emails at{" "}
-                  <span className="font-mono">
-                    ${USAGE_UNIT_PRICE[item.type]}
-                  </span>{" "}
-                  each
-                </div>
+              <div className="font-medium capitalize">
+                {item.type.toLowerCase()}
               </div>
               <div className="font-mono font-medium">
-                ${getCost(item.sent, item.type).toFixed(2)}
+                {item.sent.toLocaleString()} emails
               </div>
             </div>
           ))}
           <div>
-            <div className="flex justify-between items-center border-b pb-3 last:border-0 last:pb-0">
+            <div className="flex justify-between items-center pb-3">
               <div>
-                <div className="font-medium capitalize">Available credit</div>
+                <div className="font-medium">Included in {plan.name}</div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  {currentTeam?.plan}
+                  <span className="font-mono">
+                    {Math.min(totalSent, included).toLocaleString()}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-mono">{included.toLocaleString()}</span>{" "}
+                  emails
                 </div>
               </div>
-              <div className="font-mono font-medium">
-                {totalCost > planCreditCost
-                  ? "0"
-                  : `$${(planCreditCost - totalCost).toFixed(2)}`}
-              </div>
             </div>
-            <Progress
-              value={100 - Math.min(100, (totalCost / planCreditCost) * 100)}
-            />
+            <Progress value={Math.min(100, (totalSent / included) * 100)} />
           </div>
         </div>
         <div className="w-full flex justify-center items-center">
           <div>
-            <div className="font-medium">Amount Due</div>
-            <div className="">
-              <div className="text-2xl font-mono">
-                {planCreditCost < totalCost
-                  ? `$${(totalCost - planCreditCost).toFixed(2)}`
-                  : `$${(0.0).toFixed(2)}`}
-              </div>
+            <div className="font-medium">Estimated overage</div>
+            <div className="text-2xl font-mono">${overageCost.toFixed(2)}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              {extra.toLocaleString()} extra emails at $
+              {plan.overageUsdPer1000?.toFixed(2) ?? "0.00"} per 1,000
             </div>
           </div>
         </div>
@@ -223,7 +208,7 @@ export default function UsagePage() {
           <Card className="p-6 text-center text-muted-foreground">
             No usage data available
           </Card>
-        ) : currentTeam?.plan === "FREE" ? (
+        ) : currentTeam?.plan === "FREE" || !currentTeam?.isActive ? (
           <FreePlanUsage
             usage={usage?.month ?? []}
             dayUsage={usage?.day ?? []}
@@ -236,7 +221,7 @@ export default function UsagePage() {
         <Card className=" rounded-xl mt-10 p-4 px-8">
           <PlanDetails />
           <div className="mt-4">
-            {currentTeam?.plan === "FREE" ? <UpgradeButton /> : null}
+            {currentTeam?.plan === "FREE" ? <UpgradeButton plan="PRO" /> : null}
           </div>
         </Card>
       ) : null}
