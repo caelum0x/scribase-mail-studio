@@ -24,10 +24,21 @@ const { mockGetTeamFromToken, mockRedis, mockDb, mockQueueEmail, mockSuppression
     mockDb: {
       apiKey: { findUnique: vi.fn() },
       domain: { findFirst: vi.fn() },
-      template: { findFirst: vi.fn() },
-      topic: { findFirst: vi.fn() },
+      template: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+      templateVersion: { findFirst: vi.fn(), create: vi.fn() },
       email: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
       emailEvent: { create: vi.fn() },
+      emailAttachment: { findMany: vi.fn(), findFirst: vi.fn() },
+      emailShare: { create: vi.fn(), findUnique: vi.fn() },
+      contact: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
+      contactBook: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+      contactProperty: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+      topic: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+      contactTopic: { findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
+      segment: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+      segmentContact: { createMany: vi.fn(), deleteMany: vi.fn() },
+      campaign: { findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
+      campaignEmail: { deleteMany: vi.fn() },
     },
     mockQueueEmail: vi.fn(),
     mockSuppression: vi.fn(),
@@ -37,6 +48,7 @@ vi.mock("~/server/public-api/auth", () => ({ getTeamFromToken: mockGetTeamFromTo
 vi.mock("~/server/redis", () => ({
   getRedis: () => mockRedis,
   redisKey: (key: string) => key,
+  BULL_PREFIX: "bull",
 }));
 vi.mock("~/server/db", () => ({ db: mockDb }));
 vi.mock("~/utils/common", () => ({ isSelfHosted: () => false }));
@@ -44,8 +56,10 @@ vi.mock("~/server/service/email-queue-service", () => ({
   EmailQueueService: { queueEmail: mockQueueEmail },
 }));
 vi.mock("~/server/mailer", () => ({ sendMail: vi.fn() }));
-vi.mock("~/server/service/webhook-service", () => ({ WebhookService: {} }));
-vi.mock("~/server/service/limit-service", () => ({ LimitService: {} }));
+vi.mock("~/server/service/webhook-service", () => ({ WebhookService: { emit: vi.fn() } }));
+vi.mock("~/server/service/limit-service", () => ({
+  LimitService: { checkContactBookLimit: vi.fn().mockResolvedValue({ isLimitReached: false }) },
+}));
 vi.mock("~/server/provider", () => ({
   getEmailProvider: vi.fn(),
   getProviderRegion: vi.fn(),
@@ -53,6 +67,48 @@ vi.mock("~/server/provider", () => ({
 vi.mock("~/server/service/suppression-service", () => ({
   SuppressionService: { checkMultipleEmails: mockSuppression },
 }));
+vi.mock("~/server/service/contact-queue-service", () => ({
+  ContactQueueService: { addBulkContactJobs: vi.fn() },
+}));
+vi.mock("~/server/service/double-opt-in-service", () => ({
+  sendDoubleOptInConfirmationEmail: vi.fn(),
+}));
+vi.mock("~/server/service/content-screening-service", () => ({
+  ContentScreeningService: { assertSendable: vi.fn() },
+}));
+vi.mock("~/server/service/storage-service", () => ({
+  isStorageConfigured: vi.fn().mockReturnValue(false),
+  getStoragePublicUrl: vi.fn((key: string) => `https://storage.test/${key}`),
+  getDocumentUploadUrl: vi.fn(),
+}));
+vi.mock("~/server/service/dashboard-service", () => ({
+  emailTimeSeries: vi.fn().mockResolvedValue({ result: [], totalCounts: {} }),
+  reputationMetricsData: vi.fn().mockResolvedValue({}),
+}));
+vi.mock("~/lib/contact-properties", () => ({
+  normalizeContactProperties: (p: Record<string, string>) => p,
+  mergeContactProperties: (_e: unknown, incoming: unknown) => incoming,
+}));
+vi.mock("~/server/service/contact-variable-service", () => ({
+  normalizeContactBookVariables: (v: string[]) => v ?? [],
+  validateContactBookVariables: vi.fn(),
+}));
+vi.mock("~/lib/constants/double-opt-in", () => ({
+  DEFAULT_DOUBLE_OPT_IN_CONTENT: "confirm",
+  DEFAULT_DOUBLE_OPT_IN_SUBJECT: "Confirm",
+  hasDoubleOptInUrlPlaceholder: vi.fn().mockReturnValue(true),
+}));
+vi.mock("~/server/service/campaign-service", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("~/server/service/campaign-service")>();
+  return {
+    ...orig,
+    createCampaignFromApi: vi.fn(),
+    sendCampaign: vi.fn(),
+    scheduleCampaign: vi.fn(),
+    pauseCampaign: vi.fn(),
+    deleteCampaign: vi.fn(),
+  };
+});
 
 import { buildResendApp } from "~/server/public-api/resend";
 
