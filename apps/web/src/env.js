@@ -59,6 +59,30 @@ export const env = createEnv({
     // How often the Email Delivery logs are polled for delivered/bounced/complained
     DELIVERY_LOG_POLL_CRON: z.string().default("* * * * *"),
     REPUTATION_GUARD_CRON: z.string().default("*/10 * * * *"),
+    // Content screening of every outgoing email (links, attachments, spam signals)
+    CONTENT_SCREENING_ENABLED: z
+      .string()
+      .default("true")
+      .transform((str) => str !== "false"),
+    // Plain-text threat feeds (one domain/URL per line), comma separated.
+    // Default: Phishing.Database active phishing domains (MIT licensed).
+    SCREENING_FEED_URLS: z
+      .string()
+      .default(
+        "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
+      ),
+    SCREENING_FEED_CRON: z.string().default("17 */6 * * *"),
+    SCREENING_ALLOWLIST_DOMAINS: z.string().optional(),
+    SCREENING_BLOCKED_DOMAINS: z.string().optional(),
+    // First-sends review for new teams (both 0 disables it)
+    FIRST_SENDS_REVIEW_EMAILS: z
+      .string()
+      .optional()
+      .transform((str) => (str ? parseInt(str, 10) : undefined)),
+    FIRST_SENDS_REVIEW_HOURS: z
+      .string()
+      .optional()
+      .transform((str) => (str ? parseInt(str, 10) : undefined)),
     API_RATE_LIMIT: z
       .string()
       .default("1")
@@ -142,6 +166,13 @@ export const env = createEnv({
     SUPPRESSION_POLL_CRON: process.env.SUPPRESSION_POLL_CRON,
     DELIVERY_LOG_POLL_CRON: process.env.DELIVERY_LOG_POLL_CRON,
     REPUTATION_GUARD_CRON: process.env.REPUTATION_GUARD_CRON,
+    CONTENT_SCREENING_ENABLED: process.env.CONTENT_SCREENING_ENABLED,
+    SCREENING_FEED_URLS: process.env.SCREENING_FEED_URLS,
+    SCREENING_FEED_CRON: process.env.SCREENING_FEED_CRON,
+    SCREENING_ALLOWLIST_DOMAINS: process.env.SCREENING_ALLOWLIST_DOMAINS,
+    SCREENING_BLOCKED_DOMAINS: process.env.SCREENING_BLOCKED_DOMAINS,
+    FIRST_SENDS_REVIEW_EMAILS: process.env.FIRST_SENDS_REVIEW_EMAILS,
+    FIRST_SENDS_REVIEW_HOURS: process.env.FIRST_SENDS_REVIEW_HOURS,
     API_RATE_LIMIT: process.env.API_RATE_LIMIT,
     AUTH_EMAIL_RATE_LIMIT: process.env.AUTH_EMAIL_RATE_LIMIT,
     NEXT_PUBLIC_IS_CLOUD: process.env.NEXT_PUBLIC_IS_CLOUD,

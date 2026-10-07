@@ -11,6 +11,8 @@ import { logger } from "../logger/log";
 import { SuppressionService } from "./suppression-service";
 import { sanitizeCustomHeaders } from "~/server/utils/email-headers";
 import { Prisma } from "@prisma/client";
+import { ContentScreeningService } from "./content-screening-service";
+import type { ScreeningInput } from "~/server/screening/content-rules";
 
 async function checkIfValidEmail(emailId: string) {
   const email = await db.email.findUnique({
@@ -36,6 +38,32 @@ async function checkIfValidEmail(emailId: string) {
   }
 
   return { email, domain };
+}
+
+function screeningInput({
+  subject,
+  html,
+  text,
+  attachments,
+  headers,
+}: {
+  subject?: string;
+  html?: string;
+  text?: string;
+  attachments?: EmailContent["attachments"];
+  headers?: Record<string, string>;
+}): ScreeningInput {
+  return {
+    subject: subject ?? "",
+    html,
+    text,
+    attachments: attachments ?? [],
+    // Marketing-specific checks (unsubscribe) run in the send queue.
+    isMarketing: false,
+    hasListUnsubscribe: Object.keys(headers ?? {}).some(
+      (key) => key.toLowerCase() === "list-unsubscribe"
+    ),
+  };
 }
 
 export const replaceVariables = (
@@ -250,6 +278,13 @@ export async function sendEmail(
       message: "Either text or html is required",
     });
   }
+
+  // Malicious content is refused up front with a clear error; "hold"
+  // verdicts are applied by the send queue.
+  await ContentScreeningService.assertSendable(
+    teamId,
+    screeningInput({ subject, html, text, attachments, headers })
+  );
 
   const scheduledAtDate = scheduledAt ? new Date(scheduledAt) : undefined;
   const delay = scheduledAtDate
@@ -629,27 +664,25 @@ export async function sendBulkEmails(
 
   const createdEmails = [];
   const queueJobs = [];
+  const prepared: Array<{
+    content: (typeof filteredEmailContents)[number];
+    domain: Awaited<ReturnType<typeof validateDomainFromEmail>>;
+    originalIndex: number;
+    subject: string | undefined;
+    html: string | undefined;
+  }> = [];
 
-  // Process each domain group
+  // Render every email (templates, variables) first
   for (const { domain, emails } of emailsByDomain.values()) {
-    // Process emails in each domain group
     for (const content of emails) {
       const {
         to,
-        from,
         subject: subjectFromApiCall,
         templateId,
+        teamId,
         variables,
         text,
         html: htmlFromApiCall,
-        teamId,
-        attachments,
-        replyTo,
-        cc,
-        bcc,
-        scheduledAt,
-        apiKeyId,
-        headers,
       } = content;
 
       // Find the original index for this email
@@ -707,54 +740,87 @@ export async function sendBulkEmails(
         });
       }
 
-      const scheduledAtDate = scheduledAt ? new Date(scheduledAt) : undefined;
-      const delay = scheduledAtDate
-        ? Math.max(0, scheduledAtDate.getTime() - Date.now())
-        : undefined;
+      prepared.push({ content, domain, originalIndex, subject, html });
+    }
+  }
 
-      try {
-        const email = await db.email.create({
-          data: {
-            to: Array.isArray(to) ? to : [to],
-            from,
-            subject: subject as string,
-            replyTo: replyTo
-              ? Array.isArray(replyTo)
-                ? replyTo
-                : [replyTo]
-              : undefined,
-            cc: cc && cc.length > 0 ? cc : undefined,
-            bcc: bcc && bcc.length > 0 ? bcc : undefined,
-            text,
-            html,
-            teamId,
-            domainId: domain.id,
-            attachments: attachments ? JSON.stringify(attachments) : undefined,
-            scheduledAt: scheduledAtDate,
-            latestStatus: scheduledAtDate ? "SCHEDULED" : "QUEUED",
-            apiId: apiKeyId,
-            headers: headers ? JSON.stringify(headers) : undefined,
-          },
-        });
+  // Screen every email before creating any record, so a rejected email
+  // fails the whole request without leaving unsent emails behind.
+  for (const { content, subject, html } of prepared) {
+    await ContentScreeningService.assertSendable(
+      content.teamId,
+      screeningInput({
+        subject,
+        html,
+        text: content.text,
+        attachments: content.attachments,
+        headers: content.headers,
+      })
+    );
+  }
 
-        createdEmails.push({ email, originalIndex });
+  for (const { content, domain, originalIndex, subject, html } of prepared) {
+    const {
+      to,
+      from,
+      text,
+      teamId,
+      attachments,
+      replyTo,
+      cc,
+      bcc,
+      scheduledAt,
+      apiKeyId,
+      headers,
+    } = content;
 
-        // Prepare queue job
-        queueJobs.push({
-          emailId: email.id,
+    const scheduledAtDate = scheduledAt ? new Date(scheduledAt) : undefined;
+    const delay = scheduledAtDate
+      ? Math.max(0, scheduledAtDate.getTime() - Date.now())
+      : undefined;
+
+    try {
+      const email = await db.email.create({
+        data: {
+          to: Array.isArray(to) ? to : [to],
+          from,
+          subject: subject as string,
+          replyTo: replyTo
+            ? Array.isArray(replyTo)
+              ? replyTo
+              : [replyTo]
+            : undefined,
+          cc: cc && cc.length > 0 ? cc : undefined,
+          bcc: bcc && bcc.length > 0 ? bcc : undefined,
+          text,
+          html,
           teamId,
-          region: domain.region,
-          transactional: true, // Bulk emails are still transactional
-          delay,
-          timestamp: Date.now(),
-        });
-      } catch (error: any) {
-        logger.error(
-          { err: error, to },
-          `Failed to create email record for recipient`
-        );
-        // Continue processing other emails
-      }
+          domainId: domain.id,
+          attachments: attachments ? JSON.stringify(attachments) : undefined,
+          scheduledAt: scheduledAtDate,
+          latestStatus: scheduledAtDate ? "SCHEDULED" : "QUEUED",
+          apiId: apiKeyId,
+          headers: headers ? JSON.stringify(headers) : undefined,
+        },
+      });
+
+      createdEmails.push({ email, originalIndex });
+
+      // Prepare queue job
+      queueJobs.push({
+        emailId: email.id,
+        teamId,
+        region: domain.region,
+        transactional: true, // Bulk emails are still transactional
+        delay,
+        timestamp: Date.now(),
+      });
+    } catch (error: any) {
+      logger.error(
+        { err: error, to },
+        `Failed to create email record for recipient`
+      );
+      // Continue processing other emails
     }
   }
 

@@ -15,6 +15,7 @@ import { processEmailEvent } from "./email-event-service";
 import { logger } from "../logger/log";
 import { createWorkerHandler, TeamJob } from "../queue/bullmq-context";
 import { LimitService } from "./limit-service";
+import { gateOutgoingEmail } from "./send-gate-service";
 import {
   BUILT_IN_CONTACT_VARIABLES,
   replaceContactVariables,
@@ -33,6 +34,8 @@ type QueueEmailJob = TeamJob<{
   timestamp: number;
   unsubUrl?: string;
   isBulk?: boolean;
+  // Set when an admin approved the held email; skips screening and review.
+  reviewApproved?: boolean;
 }>;
 
 function createQueueAndWorker(region: string, quota: number, suffix: string) {
@@ -136,6 +139,7 @@ export class EmailQueueService {
     transactional: boolean,
     unsubUrl?: string,
     delay?: number,
+    options?: { reviewApproved?: boolean },
   ) {
     if (!this.initialized) {
       await this.init();
@@ -155,6 +159,7 @@ export class EmailQueueService {
         unsubUrl,
         isBulk,
         teamId,
+        ...(options?.reviewApproved ? { reviewApproved: true } : {}),
       },
       { jobId: emailId, delay, ...EMAIL_JOB_OPTIONS },
     );
@@ -441,6 +446,25 @@ export async function executeEmail(job: QueueEmailJob) {
     }
 
     const customHeaders = email.headers ? JSON.parse(email.headers) : undefined;
+
+    // Content screening + review queue: the one place every send path passes.
+    if (!job.data.reviewApproved) {
+      const decision = await gateOutgoingEmail({
+        email: { ...email, subject },
+        attachments,
+        headers: customHeaders,
+        unsubUrl,
+        isBulk: Boolean(isBulk),
+      });
+      if (decision !== "send") {
+        logger.info(
+          { emailId: email.id, decision },
+          `[EmailQueueService]: Email not sent by send gate`,
+        );
+        return;
+      }
+    }
+
     const provider = getEmailProvider();
     const messageId = buildMessageId(email.id, email.from);
 

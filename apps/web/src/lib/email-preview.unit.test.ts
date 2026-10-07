@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getEmailPreviewSrcDoc } from "./email-preview";
+import { getEmailPreviewSrcDoc, getReviewPreviewSrcDoc } from "./email-preview";
 
 describe("getEmailPreviewSrcDoc", () => {
   it("returns the html body unchanged when present", () => {
@@ -30,5 +30,23 @@ describe("getEmailPreviewSrcDoc", () => {
     expect(getEmailPreviewSrcDoc(null, null)).toBeNull();
     expect(getEmailPreviewSrcDoc("", "")).toBeNull();
     expect(getEmailPreviewSrcDoc(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("getReviewPreviewSrcDoc", () => {
+  it("prepends a CSP that blocks scripts and remote loads", () => {
+    const srcDoc = getReviewPreviewSrcDoc(
+      '<img src="https://tracker.test/p.gif"><script>alert(1)</script>',
+      null,
+    );
+    expect(
+      srcDoc?.startsWith('<meta http-equiv="Content-Security-Policy"'),
+    ).toBe(true);
+    expect(srcDoc).toContain("default-src 'none'");
+    expect(srcDoc).toContain("img-src data:");
+  });
+
+  it("returns null without content", () => {
+    expect(getReviewPreviewSrcDoc(null, null)).toBeNull();
   });
 });

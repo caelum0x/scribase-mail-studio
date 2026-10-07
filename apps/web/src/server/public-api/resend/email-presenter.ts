@@ -19,6 +19,8 @@ export type ResendLastEvent =
 const LAST_EVENT: Record<EmailStatus, ResendLastEvent> = {
   SCHEDULED: "scheduled",
   QUEUED: "queued",
+  // Waiting for content/first-sends review; Resend has no equivalent event.
+  HELD: "queued",
   SENT: "sent",
   DELIVERY_DELAYED: "delivery_delayed",
   BOUNCED: "bounced",

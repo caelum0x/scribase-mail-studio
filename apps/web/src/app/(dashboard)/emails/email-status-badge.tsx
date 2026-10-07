@@ -24,6 +24,9 @@ export const EmailStatusBadge: React.FC<{ status: EmailStatus }> = ({
     case "DELIVERY_DELAYED":
       badgeColor = "bg-yellow/15 text-yellow border border-yellow/20";
       break;
+    case "HELD":
+      badgeColor = "bg-yellow/15 text-yellow border border-yellow/20";
+      break;
 
     default:
       badgeColor = "bg-gray-700/10 text-gray-400 border border-gray-400/10"; // Default color
@@ -67,6 +70,10 @@ export const EmailStatusIcon: React.FC<{ status: EmailStatus }> = ({
       insideColor = "bg-yellow";
       break;
     case "COMPLAINED":
+      outsideColor = "bg-yellow/30";
+      insideColor = "bg-yellow";
+      break;
+    case "HELD":
       outsideColor = "bg-yellow/30";
       insideColor = "bg-yellow";
       break;

@@ -292,6 +292,19 @@ const EmailStatusText = ({
     );
   } else if (status === "CANCELLED") {
     return <div>This scheduled email was cancelled</div>;
+  } else if (status === "HELD") {
+    const _data = data as unknown as { message?: string; checks?: string };
+    return (
+      <div className="flex flex-col gap-2">
+        <p>
+          {_data?.message ??
+            "This email is held for review before it is sent."}
+        </p>
+        {_data?.checks ? (
+          <p className="text-sm text-muted-foreground">{_data.checks}</p>
+        ) : null}
+      </div>
+    );
   } else if (status === "SUPPRESSED") {
     return (
       <div>

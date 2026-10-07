@@ -24,6 +24,7 @@ export default function AdminLayout({
         {isCloud() ? (
           <SettingsNavButton href="/admin/waitlist">Waitlist</SettingsNavButton>
         ) : null}
+        <SettingsNavButton href="/admin/review">Review</SettingsNavButton>
       </div>
       <div className="mt-8">{children}</div>
     </div>

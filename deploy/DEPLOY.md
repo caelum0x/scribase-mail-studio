@@ -179,6 +179,13 @@ RESEND_BASE_URL=https://mail-api.scribase.com RESEND_API_KEY=$KEY node -e '
    (Resend semantics) on both APIs. Default rate limit is 10 req/s per team
    (Admin > Teams to change it per team), shared by both APIs.
 
+In cloud mode a new team's first emails are `HELD` for review: open
+Admin > Review, check the preview, and click Approve (or "Approve and trust
+team" for your own team). The email should then reach `SENT` within seconds
+(approved sender auto-created on the first send). A test with a link to a
+listed phishing domain should be refused with `400 Email rejected by content
+screening`.
+
 ## 7. Backups
 
 ```sh
@@ -259,6 +266,52 @@ docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env down  
 To roll back to a previous build, set `GIT_SHA` to the previous image tag
 (`docker images scribase-mail`) and `up -d` again. Data stays in
 `/srv/scribase-mail/data`.
+
+## Abuse controls (content screening + review queue)
+
+Every email (API, SMTP proxy, campaigns, scheduled) passes one gate in the
+send queue right after the limit check:
+
+- **Reject**: link to a host on a threat feed or in
+  `SCREENING_BLOCKED_DOMAINS`, or an executable/script/disk-image attachment
+  (`.exe .js .scr .iso .lnk ...`). The API and SMTP proxy return
+  `400 Email rejected by content screening: <reason>`; campaigns are refused
+  when scheduled. Each such rejection is a strike; 3 strikes in 7 days block
+  the team (`blockedReason: CONTENT: ...`) and email `ADMIN_EMAIL`.
+- **Hold**: raw-IP links, URL shorteners, link text showing a different
+  domain than the href, `javascript:`/`data:` links, base64-only bodies,
+  macro/html/svg attachments, marketing mail without unsubscribe, or a
+  heuristic score >= 5 (phishing/crypto/gift-card language, all-caps subject,
+  hidden text, forms...). Thresholds live in
+  `apps/web/src/lib/constants/sending-policy.ts` (`SCREENING_POLICY`).
+- **First sends**: in cloud mode a new team's emails are held until it has
+  sent 20 emails and is 48 hours old (`FIRST_SENDS_REVIEW` /
+  `FIRST_SENDS_REVIEW_EMAILS` / `FIRST_SENDS_REVIEW_HOURS`), unless the team
+  is admin-verified or trusted.
+
+Held emails show as `HELD` in the customer's email log and in
+`GET /api/v1/emails/{id}` (`latestStatus`). The admin gets at most one email
+per 30 minutes about the queue. Review at **Admin > Review**
+(`/admin/review`): the preview runs in a sandboxed iframe with a CSP that
+blocks scripts and every remote load. Actions: Approve, Approve and trust team
+(ends the first-sends review for that team), Approve all from this team,
+Reject (optional note shown to the customer), Reject and block team.
+
+Threat feeds are downloaded every 6 hours (`SCREENING_FEED_CRON`) into Redis
+as a ~3 MB hash index (8 bytes per host); a refresh briefly uses ~30 MB. If a
+feed download fails the previous index is kept; if Redis is down, screening
+continues with heuristics only. Default feed:
+[Phishing.Database](https://github.com/Phishing-Database/Phishing.Database)
+active phishing domains (MIT license, commercial use allowed, ~390k hosts).
+Shared platforms the feed lists (sites.google.com, vercel.app, ...) are
+exempt so legitimate mail isn't rejected; subdomains on them still match.
+
+Feeds deliberately **not** used by default because their terms forbid or
+restrict commercial use: Spamhaus DNSBLs, Google Safe Browsing Lookup v4,
+OpenPhish community feed (non-commercial only), abuse.ch URLhaus/ThreatFox
+(Auth-Key required; commercial use may need a paid subscription), Phishing
+Army (CC BY-NC). Add a feed to `SCREENING_FEED_URLS` only after checking its
+terms.
 
 ## Notes
 

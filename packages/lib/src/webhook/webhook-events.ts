@@ -60,7 +60,9 @@ export type EmailStatus =
   | "SUPPRESSED"
   | "OPENED"
   | "CLICKED"
-  | "SCHEDULED";
+  | "SCHEDULED"
+  // Held for Scribase Mail review before sending.
+  | "HELD";
 
 export type EmailBasePayload = {
   id: string;

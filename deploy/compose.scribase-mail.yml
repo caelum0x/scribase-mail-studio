@@ -115,6 +115,15 @@ services:
       SUPPRESSION_POLL_CRON: ${SUPPRESSION_POLL_CRON:-*/5 * * * *}
       DELIVERY_LOG_POLL_CRON: ${DELIVERY_LOG_POLL_CRON:-* * * * *}
       OCI_LOG_GROUP_NAME: ${OCI_LOG_GROUP_NAME:-scribase-mail}
+      # Content screening + review queue (see DEPLOY.md "Abuse controls")
+      CONTENT_SCREENING_ENABLED: ${CONTENT_SCREENING_ENABLED:-true}
+      # "-" (not ":-"): an explicitly empty value turns the feeds off
+      SCREENING_FEED_URLS: ${SCREENING_FEED_URLS-https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt}
+      SCREENING_FEED_CRON: ${SCREENING_FEED_CRON:-17 */6 * * *}
+      SCREENING_ALLOWLIST_DOMAINS: ${SCREENING_ALLOWLIST_DOMAINS:-}
+      SCREENING_BLOCKED_DOMAINS: ${SCREENING_BLOCKED_DOMAINS:-}
+      FIRST_SENDS_REVIEW_EMAILS: ${FIRST_SENDS_REVIEW_EMAILS:-}
+      FIRST_SENDS_REVIEW_HOURS: ${FIRST_SENDS_REVIEW_HOURS:-}
       SMTP_PUBLIC_HOST: ${SMTP_PUBLIC_HOST:-smtp.mail.scribase.com}
       SMTP_PUBLIC_USER: ${SMTP_PUBLIC_USER:-scribase}
       OCI_STORAGE_NAMESPACE: ${OCI_STORAGE_NAMESPACE:-}

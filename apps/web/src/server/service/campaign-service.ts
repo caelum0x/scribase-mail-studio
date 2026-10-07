@@ -9,6 +9,7 @@ import {
   UnsubscribeReason,
 } from "@prisma/client";
 import { EmailQueueService } from "./email-queue-service";
+import { ContentScreeningService } from "./content-screening-service";
 import { Queue, Worker } from "bullmq";
 import { getRedis, BULL_PREFIX } from "../redis";
 import {
@@ -332,6 +333,25 @@ export async function getCampaignForTeam({
   return campaign;
 }
 
+/**
+ * Refuses campaigns with malicious content before any email is created.
+ * Per-recipient emails are screened again (and possibly held) when sent.
+ */
+async function screenCampaign(
+  campaign: Pick<Campaign, "teamId" | "subject" | "previewText">,
+  html: string,
+) {
+  await ContentScreeningService.assertSendable(campaign.teamId, {
+    subject: campaign.subject,
+    html,
+    text: campaign.previewText,
+    attachments: [],
+    isMarketing: true,
+    // The unsubscribe placeholder was checked above.
+    hasListUnsubscribe: true,
+  });
+}
+
 export async function sendCampaign(id: string) {
   let campaign = await db.campaign.findUnique({
     where: { id },
@@ -361,6 +381,8 @@ export async function sendCampaign(id: string) {
   if (!unsubPlaceholderFound) {
     throw new Error("Campaign must include an unsubscribe link before sending");
   }
+
+  await screenCampaign(campaign, html);
 
   // Count subscribed contacts for total, don't load all into memory
   const total = await db.contact.count({
@@ -442,6 +464,8 @@ export async function scheduleCampaign({
       message: "Campaign must include an unsubscribe link before scheduling",
     });
   }
+
+  await screenCampaign(campaign, html);
 
   // Count subscribed contacts for total
   const total = await db.contact.count({
