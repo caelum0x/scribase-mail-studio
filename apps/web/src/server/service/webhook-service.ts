@@ -1,4 +1,4 @@
-import { WebhookCallStatus, WebhookStatus } from "@prisma/client";
+import { WebhookCallStatus, WebhookSignatureFormat, WebhookStatus } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 import { createHmac, randomUUID, randomBytes } from "crypto";
 import {
@@ -19,6 +19,10 @@ import { createWorkerHandler, TeamJob } from "../queue/bullmq-context";
 import { logger } from "../logger/log";
 import { LimitService } from "./limit-service";
 import { UnsendApiError } from "../public-api/api-error";
+import { toResendPayload } from "./webhook-resend-payload";
+
+/** How long (ms) a previous secret remains valid after rotation. */
+const PREVIOUS_SECRET_TTL_MS = 24 * 60 * 60 * 1000;
 
 const WEBHOOK_DISPATCH_CONCURRENCY = 25;
 const WEBHOOK_MAX_ATTEMPTS = 6;
@@ -225,6 +229,52 @@ export class WebhookService {
     return `whsec_${randomBytes(32).toString("hex")}`;
   }
 
+  /**
+   * Generates a Svix/Standard Webhooks compatible secret:
+   * `whsec_<base64(32 random bytes)>`.
+   *
+   * standardwebhooks strips the `whsec_` prefix, then base64-decodes
+   * the remainder to get the HMAC key.
+   */
+  public static generateSvixSecret() {
+    return `whsec_${randomBytes(32).toString("base64")}`;
+  }
+
+  /**
+   * Rotates a webhook's signing secret. The old secret is preserved in
+   * `previousSecret` and remains valid for `PREVIOUS_SECRET_TTL_MS` (24 h).
+   * Returns the new webhook row.
+   */
+  public static async rotateSigningSecret(params: {
+    id: string;
+    teamId: number;
+  }) {
+    const webhook = await db.webhook.findFirst({
+      where: { id: params.id, teamId: params.teamId },
+    });
+
+    if (!webhook) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Webhook not found",
+      });
+    }
+
+    const newSecret =
+      webhook.signatureFormat === WebhookSignatureFormat.SVIX
+        ? WebhookService.generateSvixSecret()
+        : WebhookService.generateSecret();
+
+    return db.webhook.update({
+      where: { id: webhook.id },
+      data: {
+        secret: newSecret,
+        previousSecret: webhook.secret,
+        previousSecretExpiresAt: new Date(Date.now() + PREVIOUS_SECRET_TTL_MS),
+      },
+    });
+  }
+
   public static async listWebhooks(teamId: number) {
     return db.webhook.findMany({
       where: { teamId },
@@ -255,6 +305,7 @@ export class WebhookService {
     eventTypes: string[];
     domainIds?: number[];
     secret?: string;
+    signatureFormat?: WebhookSignatureFormat;
   }) {
     const { isLimitReached, reason } = await LimitService.checkWebhookLimit(
       params.teamId,
@@ -278,7 +329,12 @@ export class WebhookService {
       );
     }
 
-    const secret = params.secret ?? WebhookService.generateSecret();
+    const format = params.signatureFormat ?? WebhookSignatureFormat.USESEND;
+    const secret =
+      params.secret ??
+      (format === WebhookSignatureFormat.SVIX
+        ? WebhookService.generateSvixSecret()
+        : WebhookService.generateSecret());
 
     return db.webhook.create({
       data: {
@@ -290,6 +346,7 @@ export class WebhookService {
         eventTypes: params.eventTypes,
         status: WebhookStatus.ACTIVE,
         createdByUserId: params.userId,
+        signatureFormat: format,
       },
     });
   }
@@ -498,7 +555,19 @@ async function processWebhookCall(job: WebhookCallJob) {
   const call = await db.webhookCall.findUnique({
     where: { id: job.data.callId },
     include: {
-      webhook: true,
+      webhook: {
+        select: {
+          id: true,
+          url: true,
+          secret: true,
+          status: true,
+          apiVersion: true,
+          signatureFormat: true,
+          previousSecret: true,
+          previousSecretExpiresAt: true,
+          consecutiveFailures: true,
+        },
+      },
     },
   });
 
@@ -555,6 +624,9 @@ async function processWebhookCall(job: WebhookCallJob) {
     const { responseStatus, responseTimeMs, responseText } = await postWebhook({
       url: call.webhook.url,
       secret: call.webhook.secret,
+      previousSecret: call.webhook.previousSecret ?? undefined,
+      previousSecretExpiresAt: call.webhook.previousSecretExpiresAt ?? undefined,
+      signatureFormat: call.webhook.signatureFormat,
       type: call.type,
       callId: call.id,
       body,
@@ -722,6 +794,12 @@ type WebhookPayload = {
   attempt: number;
 };
 
+type ResendWebhookPayload = {
+  type: string;
+  created_at: string;
+  data: Record<string, unknown>;
+};
+
 function buildPayload(
   call: {
     id: string;
@@ -730,15 +808,26 @@ function buildPayload(
     type: string;
     payload: string;
     createdAt: Date;
-    webhook: { apiVersion: string | null };
+    webhook: {
+      apiVersion: string | null;
+      signatureFormat: WebhookSignatureFormat;
+    };
   },
   attempt: number,
-): WebhookPayload {
+): WebhookPayload | ResendWebhookPayload {
   let parsed: unknown = call.payload;
   try {
     parsed = JSON.parse(call.payload);
   } catch {
     // keep string payload as-is
+  }
+
+  if (call.webhook.signatureFormat === WebhookSignatureFormat.SVIX) {
+    return toResendPayload(
+      call.type,
+      parsed,
+      call.createdAt.toISOString(),
+    );
   }
 
   return {
@@ -773,9 +862,12 @@ class WebhookHttpError extends Error {
 async function postWebhook(params: {
   url: string;
   secret: string;
+  previousSecret?: string;
+  previousSecretExpiresAt?: Date;
+  signatureFormat: WebhookSignatureFormat;
   type: string;
   callId: string;
-  body: WebhookPayload;
+  body: WebhookPayload | ResendWebhookPayload;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -784,18 +876,63 @@ async function postWebhook(params: {
   );
 
   const stringBody = JSON.stringify(params.body);
-  const timestamp = Date.now().toString();
-  const signature = signBody(params.secret, timestamp, stringBody);
+  const isSvix = params.signatureFormat === WebhookSignatureFormat.SVIX;
 
-  const headers = {
-    "Content-Type": "application/json",
-    "User-Agent": "UseSend-Webhook/1.0",
-    "X-UseSend-Event": params.type,
-    "X-UseSend-Call": params.callId,
-    "X-UseSend-Timestamp": timestamp,
-    "X-UseSend-Signature": signature,
-    "X-UseSend-Retry": params.body.attempt > 1 ? "true" : "false",
-  };
+  let headers: Record<string, string>;
+
+  if (isSvix) {
+    const msgId = `msg_${randomBytes(16).toString("hex")}`;
+    const epochSeconds = Math.floor(Date.now() / 1000);
+
+    // Build signatures: current + previous (if still within grace period)
+    const signatures: string[] = [
+      svixSign(params.secret, msgId, epochSeconds, stringBody),
+    ];
+
+    if (
+      params.previousSecret &&
+      params.previousSecretExpiresAt &&
+      params.previousSecretExpiresAt.getTime() > Date.now()
+    ) {
+      signatures.push(
+        svixSign(params.previousSecret, msgId, epochSeconds, stringBody),
+      );
+    }
+
+    headers = {
+      "Content-Type": "application/json",
+      "User-Agent": "Scribase-Webhook/1.0",
+      "svix-id": msgId,
+      "svix-timestamp": String(epochSeconds),
+      "svix-signature": signatures.join(" "),
+      // Also expose the Resend-named variants (same values)
+      "webhook-id": msgId,
+      "webhook-timestamp": String(epochSeconds),
+      "webhook-signature": signatures.join(" "),
+    };
+  } else {
+    const timestamp = Date.now().toString();
+    const signature = signBody(params.secret, timestamp, stringBody);
+    const usesendBody = params.body as WebhookPayload;
+
+    // Also send previous USESEND signature during rotation
+    const sigHeader =
+      params.previousSecret &&
+      params.previousSecretExpiresAt &&
+      params.previousSecretExpiresAt.getTime() > Date.now()
+        ? `${signature} ${signBody(params.previousSecret, timestamp, stringBody)}`
+        : signature;
+
+    headers = {
+      "Content-Type": "application/json",
+      "User-Agent": "UseSend-Webhook/1.0",
+      "X-UseSend-Event": params.type,
+      "X-UseSend-Call": params.callId,
+      "X-UseSend-Timestamp": timestamp,
+      "X-UseSend-Signature": sigHeader,
+      "X-UseSend-Retry": (usesendBody.attempt ?? 0) > 1 ? "true" : "false",
+    };
+  }
 
   const start = Date.now();
 
@@ -852,6 +989,29 @@ function signBody(secret: string, timestamp: string, body: string) {
   const hmac = createHmac("sha256", secret);
   hmac.update(`${timestamp}.${body}`);
   return `v1=${hmac.digest("hex")}`;
+}
+
+/**
+ * Standard Webhooks / Svix signing.
+ *
+ * The secret is stored as `whsec_<base64>`. standardwebhooks strips the
+ * prefix and base64-decodes to obtain the raw key bytes.
+ *
+ * Signed string: `{msgId}.{epochSeconds}.{body}`
+ * Result:        `v1,{base64(HMAC-SHA256(key, signedString))}`
+ */
+function svixSign(
+  secret: string,
+  msgId: string,
+  epochSeconds: number,
+  body: string,
+): string {
+  const keyBase64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  const key = Buffer.from(keyBase64, "base64");
+  const toSign = `${msgId}.${epochSeconds}.${body}`;
+  const hmac = createHmac("sha256", key);
+  hmac.update(toSign);
+  return `v1,${hmac.digest("base64")}`;
 }
 
 async function captureResponseText(response: Response) {
