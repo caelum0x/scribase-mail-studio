@@ -1,9 +1,5 @@
-import { Plan } from "@prisma/client";
-import { PLAN_PERKS } from "~/lib/constants/payments";
-import { isEntitledSubscriptionStatus } from "~/lib/subscription-status";
-import { CheckCircle2 } from "lucide-react";
+import { PRICING_PLANS } from "@usesend/lib/src/constants/pricing";
 import { api } from "~/trpc/react";
-import Spinner from "@usesend/ui/src/spinner";
 import { useTeam } from "~/providers/team-context";
 import { Badge } from "@usesend/ui/src/badge";
 import { format } from "date-fns";
@@ -16,33 +12,28 @@ export const PlanDetails = () => {
     return null;
   }
 
-  const planKey = currentTeam.plan as keyof typeof PLAN_PERKS;
-  const perks = PLAN_PERKS[planKey] || [];
-  const isEntitled = isEntitledSubscriptionStatus(
-    subscriptionQuery.data?.status,
-  );
+  const activePlan =
+    currentTeam.isActive && currentTeam.plan ? currentTeam.plan : "FREE";
+  const plan = PRICING_PLANS[activePlan];
+  const onHold =
+    !currentTeam.isActive && subscriptionQuery.data?.status === "on_hold";
 
   return (
     <div>
-      <div className="capitalize text-lg">
-        {isEntitled ? planKey.toLowerCase() : "free"}
-      </div>
-      <div className="flex items-center gap-2">
+      <div className="text-lg">{plan.name}</div>
+      <div className="flex flex-wrap items-center gap-2">
         <div className="text-muted-foreground text-sm">Current plan</div>
         {subscriptionQuery.data?.cancelAtPeriodEnd && (
           <Badge variant="secondary">
-            Cancels {format(subscriptionQuery.data.cancelAtPeriodEnd, "MMM dd")}
+            Ends {format(subscriptionQuery.data.cancelAtPeriodEnd, "MMM dd")}
+          </Badge>
+        )}
+        {onHold && (
+          <Badge variant="secondary">
+            Payment failed. Update your payment method.
           </Badge>
         )}
       </div>
-      <ul className="mt-4 space-y-3">
-        {perks.map((perk, index) => (
-          <li key={index} className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-green flex-shrink-0" />
-            <span className="text-sm">{perk}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 };

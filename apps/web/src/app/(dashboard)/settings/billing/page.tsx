@@ -1,19 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { CreditCard } from "lucide-react";
 import { Button } from "@usesend/ui/src/button";
 import { Card } from "@usesend/ui/src/card";
 import { Spinner } from "@usesend/ui/src/spinner";
+import { toast } from "@usesend/ui/src/toaster";
 import { format } from "date-fns";
 import { useTeam } from "~/providers/team-context";
 import { api } from "~/trpc/react";
 import { PlanDetails } from "~/components/payments/PlanDetails";
-import { UpgradeButton } from "~/components/payments/UpgradeButton";
+import { PlanPicker } from "~/components/payments/PlanPicker";
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  past_due: "Past due",
+  on_hold: "On hold (payment failed)",
+  cancelled: "Cancelled",
+  expired: "Expired",
+  failed: "Failed",
+  pending: "Pending",
+};
 
 export default function SettingsPage() {
   const { currentTeam, currentIsAdmin } = useTeam();
+  const status = api.billing.getBillingStatus.useQuery();
   const manageSessionUrl = api.billing.getManageSessionUrl.useMutation();
+  const resume = api.billing.resumeSubscription.useMutation();
   const updateBillingEmailMutation =
     api.billing.updateBillingEmail.useMutation();
 
@@ -26,9 +38,24 @@ export default function SettingsPage() {
   const apiUtils = api.useUtils();
 
   const onManageClick = async () => {
-    const url = await manageSessionUrl.mutateAsync();
-    if (url) {
-      window.location.href = url;
+    try {
+      const url = await manageSessionUrl.mutateAsync();
+      if (url) {
+        window.location.href = url;
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not open the portal",
+      );
+    }
+  };
+
+  const onResume = async () => {
+    try {
+      await resume.mutateAsync();
+      await apiUtils.billing.getSubscriptionDetails.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Resume failed");
     }
   };
 
@@ -43,20 +70,17 @@ export default function SettingsPage() {
       await apiUtils.team.getTeams.invalidate();
       setIsEditingEmail(false);
     } catch (error) {
-      console.error("Failed to update billing email:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Could not save the email",
+      );
     }
   };
-
-  const paymentMethod =
-    subscription?.paymentMethod && subscription.paymentMethod !== "null"
-      ? JSON.parse(subscription.paymentMethod)
-      : {};
 
   if (!currentIsAdmin) {
     return null;
   }
 
-  if (!currentTeam?.plan) {
+  if (!currentTeam?.plan || status.isLoading) {
     return (
       <div className="flex justify-center items-center h-full">
         <Spinner className="w-4 h-4" />
@@ -64,70 +88,77 @@ export default function SettingsPage() {
     );
   }
 
+  const configured = Boolean(status.data?.configured);
+
   return (
     <div className="space-y-8">
-      <Card className=" rounded-xl mt-10 p-8 px-8">
-        <PlanDetails />
-        <div className="mt-4">
-          {currentTeam?.plan !== "FREE" ? (
+      <Card className="rounded-xl mt-10 p-8 px-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <PlanDetails />
+          {configured && currentTeam.billingCustomerId ? (
             <Button
+              variant="outline"
               onClick={onManageClick}
-              className="mt-4 w-[120px]"
               disabled={manageSessionUrl.isPending}
             >
               {manageSessionUrl.isPending ? (
                 <Spinner className="w-4 h-4" />
               ) : (
-                "Manage"
+                "Invoices and payment method"
               )}
             </Button>
-          ) : (
-            <UpgradeButton />
-          )}
+          ) : null}
+        </div>
+        {!configured ? (
+          <p className="mt-6 text-sm text-muted-foreground">
+            Billing not configured. Paid plans become available once the
+            operator connects Dodo Payments.
+          </p>
+        ) : null}
+        <div className="mt-8">
+          <PlanPicker />
         </div>
       </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
         <Card className="p-6">
-          <div>
-            <div className="text-sm text-muted-foreground">Payment Method</div>
-            {subscription ? (
-              <div className="mt-2">
-                <div className="text-lg font-mono uppercase flex items-center gap-2">
-                  {subscription.paymentMethod &&
-                  subscription.paymentMethod !== "null" ? (
-                    <>
-                      <CreditCard className="h-4 w-4" />
-                      <span className="capitalize">
-                        {paymentMethod?.card?.brand || ""} ••••{" "}
-                        {paymentMethod?.card?.last4 || ""}
-                      </span>
-                      {paymentMethod?.card && (
-                        <span className="text-sm text-muted-foreground lowercase">
-                          (Expires: {paymentMethod.card.exp_month}/
-                          {paymentMethod.card.exp_year})
-                        </span>
-                      )}
-                    </>
+          <div className="text-sm text-muted-foreground">Subscription</div>
+          {subscription ? (
+            <div className="mt-2 space-y-1">
+              <div className="text-lg">
+                {STATUS_LABELS[subscription.status] ?? subscription.status}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {subscription.cancelAtPeriodEnd
+                  ? "Ends on "
+                  : "Next billing date: "}
+                {subscription.currentPeriodEnd
+                  ? format(
+                      new Date(subscription.currentPeriodEnd),
+                      "MMM dd, yyyy",
+                    )
+                  : "N/A"}
+              </div>
+              {subscription.cancelAtPeriodEnd && configured ? (
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={onResume}
+                  disabled={resume.isPending}
+                >
+                  {resume.isPending ? (
+                    <Spinner className="w-4 h-4" />
                   ) : (
-                    "No Payment Method"
+                    "Keep my plan"
                   )}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Next billing date:{" "}
-                  {subscription.currentPeriodEnd
-                    ? format(
-                        new Date(subscription.currentPeriodEnd),
-                        "MMM dd, yyyy",
-                      )
-                    : "N/A"}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground mt-2">
-                No active subscription
-              </div>
-            )}
-          </div>
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground mt-2">
+              No subscription
+            </div>
+          )}
         </Card>
 
         <Card className="p-6">
@@ -140,7 +171,7 @@ export default function SettingsPage() {
                     type="email"
                     value={billingEmail}
                     onChange={(e) => setBillingEmail(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder="Enter billing email"
                   />
                   <Button

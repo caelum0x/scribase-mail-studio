@@ -8,6 +8,7 @@ import { APP_URL, DOCS_URL, SOURCE_CODE_URL } from "~/lib/site";
 
 const NAV_LINKS = [
   { href: "/#features", label: "Features", external: false },
+  { href: "/#pricing", label: "Pricing", external: false },
   { href: DOCS_URL, label: "Docs", external: true },
   { href: SOURCE_CODE_URL, label: "Source", external: true },
 ];

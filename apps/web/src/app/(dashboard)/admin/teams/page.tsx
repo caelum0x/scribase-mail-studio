@@ -48,7 +48,7 @@ const updateSchema = z.object({
   apiRateLimit: z.coerce.number().int().min(1).max(10_000),
   dailyEmailLimit: z.coerce.number().int().min(0).max(10_000_000),
   isBlocked: z.boolean(),
-  plan: z.enum(["FREE", "BASIC"]),
+  plan: z.enum(["FREE", "PRO", "SCALE"]),
 });
 
 type UpdateInput = z.infer<typeof updateSchema>;
@@ -323,7 +323,8 @@ export default function AdminTeamsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="FREE">Free</SelectItem>
-                            <SelectItem value="BASIC">Basic</SelectItem>
+                            <SelectItem value="PRO">Pro</SelectItem>
+                            <SelectItem value="SCALE">Scale</SelectItem>
                           </SelectContent>
                         </Select>
                       </FormControl>

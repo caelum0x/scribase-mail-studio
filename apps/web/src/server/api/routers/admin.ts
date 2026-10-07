@@ -374,7 +374,7 @@ export const adminRouter = createTRPCRouter({
         apiRateLimit: z.number().int().min(1).max(10_000),
         dailyEmailLimit: z.number().int().min(0).max(10_000_000),
         isBlocked: z.boolean(),
-        plan: z.enum(["FREE", "BASIC"]),
+        plan: z.enum(["FREE", "PRO", "SCALE"]),
       }),
     )
     .mutation(async ({ input }) => {
@@ -460,7 +460,7 @@ export const adminRouter = createTRPCRouter({
             ? Prisma.sql`AND d."date" = ${today}`
             : Prisma.sql`AND d."date" >= ${monthStart}`
         }
-        ${paidOnly ? Prisma.sql`AND t."plan" = 'BASIC'` : Prisma.sql``}
+        ${paidOnly ? Prisma.sql`AND t."plan" <> 'FREE'` : Prisma.sql``}
         GROUP BY d."teamId", t."name", t."plan"
         ORDER BY sent DESC
       `;

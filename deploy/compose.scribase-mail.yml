@@ -121,6 +121,14 @@ services:
       API_RATE_LIMIT: ${API_RATE_LIMIT:-2}
       AUTH_EMAIL_RATE_LIMIT: ${AUTH_EMAIL_RATE_LIMIT:-5}
       EMAIL_CLEANUP_DAYS: ${EMAIL_CLEANUP_DAYS:-30}
+      # Billing (Dodo Payments). Optional: unset = "Billing not configured".
+      DODO_PAYMENTS_API_KEY: ${DODO_PAYMENTS_API_KEY:-}
+      DODO_PAYMENTS_WEBHOOK_KEY: ${DODO_PAYMENTS_WEBHOOK_KEY:-}
+      DODO_PAYMENTS_ENVIRONMENT: ${DODO_PAYMENTS_ENVIRONMENT:-test_mode}
+      DODO_PRODUCT_ID_PRO: ${DODO_PRODUCT_ID_PRO:-}
+      DODO_PRODUCT_ID_SCALE: ${DODO_PRODUCT_ID_SCALE:-}
+      DODO_USAGE_METER_ID: ${DODO_USAGE_METER_ID:-}
+      DODO_USAGE_EVENT_NAME: ${DODO_USAGE_EVENT_NAME:-email.sent}
     volumes:
       - ${OCI_PRIVATE_KEY_FILE:?set OCI_PRIVATE_KEY_FILE}:/run/secrets/oci_api_key.pem:ro
     healthcheck:
