@@ -12,6 +12,7 @@ const { mockDb, mockUpdateCampaignAnalytics, mockWebhookEmit } = vi.hoisted(
       },
       emailEvent: {
         findFirst: vi.fn(),
+        findMany: vi.fn(),
         create: vi.fn(),
       },
       dailyEmailUsage: {
@@ -47,9 +48,13 @@ vi.mock("~/server/service/webhook-service", () => ({
   },
 }));
 
+const { mockAddSuppression } = vi.hoisted(() => ({
+  mockAddSuppression: vi.fn(),
+}));
+
 vi.mock("~/server/service/suppression-service", () => ({
   SuppressionService: {
-    addSuppression: vi.fn(),
+    addSuppression: mockAddSuppression,
   },
 }));
 
@@ -249,6 +254,126 @@ describe("processEmailEvent lookup and send events", () => {
       7,
       "email.sent",
       expect.objectContaining({ id: "email_1", status: EmailStatus.SENT }),
+      { domainId: 11 },
+    );
+  });
+});
+
+describe("processEmailEvent delivery outcome dedupe", () => {
+  function bounceEvent(bounceType: "Permanent" | "Transient"): MailEvent {
+    return {
+      eventType: "Bounce",
+      mail: {
+        timestamp: "2026-07-13T01:00:00.000Z",
+        emailId: "email_1",
+        messageId: "email_1@mail.example.com",
+      },
+      bounce: {
+        bounceType,
+        bounceSubType: "NoEmail",
+        bouncedRecipients: [
+          {
+            emailAddress: "recipient@example.com",
+            action: "failed",
+            status: "5.1.1",
+          },
+        ],
+        timestamp: "2026-07-13T01:00:00.000Z",
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDb.email.findUnique.mockResolvedValue(email);
+    mockDb.emailEvent.create.mockResolvedValue({});
+    mockDb.emailEvent.findFirst.mockResolvedValue(null);
+    mockDb.dailyEmailUsage.upsert.mockResolvedValue({});
+    mockDb.cumulatedMetrics.upsert.mockResolvedValue({});
+    mockWebhookEmit.mockResolvedValue(undefined);
+  });
+
+  it("records the first hard bounce with usage, suppression and webhook", async () => {
+    mockDb.emailEvent.findMany.mockResolvedValue([]);
+
+    await expect(processEmailEvent(bounceEvent("Permanent"))).resolves.toBe(
+      true,
+    );
+
+    expect(mockDb.emailEvent.findMany).toHaveBeenCalledWith({
+      where: { emailId: "email_1", status: EmailStatus.BOUNCED },
+      select: { data: true },
+    });
+    expect(mockAddSuppression).toHaveBeenCalledTimes(1);
+    expect(mockDb.dailyEmailUsage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { bounced: { increment: 1 }, hardBounced: { increment: 1 } },
+      }),
+    );
+    expect(mockDb.emailEvent.create).toHaveBeenCalledTimes(1);
+    expect(mockWebhookEmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the same bounce reported by the second source", async () => {
+    mockDb.emailEvent.findMany.mockResolvedValue([
+      { data: bounceEvent("Permanent").bounce },
+    ]);
+
+    await expect(processEmailEvent(bounceEvent("Permanent"))).resolves.toBe(
+      true,
+    );
+
+    expect(mockDb.$executeRaw).not.toHaveBeenCalled();
+    expect(mockDb.dailyEmailUsage.upsert).not.toHaveBeenCalled();
+    expect(mockDb.emailEvent.create).not.toHaveBeenCalled();
+    expect(mockWebhookEmit).not.toHaveBeenCalled();
+  });
+
+  it("counts only hardBounced when a soft bounce turns permanent", async () => {
+    mockDb.emailEvent.findMany.mockResolvedValue([
+      { data: bounceEvent("Transient").bounce },
+    ]);
+
+    await processEmailEvent(bounceEvent("Permanent"));
+
+    expect(mockDb.dailyEmailUsage.upsert).toHaveBeenCalledTimes(1);
+    expect(mockDb.dailyEmailUsage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { hardBounced: { increment: 1 } } }),
+    );
+    expect(mockDb.cumulatedMetrics.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { hardBounced: { increment: BigInt(1) } },
+      }),
+    );
+    expect(mockAddSuppression).toHaveBeenCalledTimes(1);
+    expect(mockDb.emailEvent.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a delivery once per email", async () => {
+    mockDb.emailEvent.findMany.mockResolvedValue([]);
+    const event: MailEvent = {
+      eventType: "Delivery",
+      mail: {
+        timestamp: "2026-07-13T01:00:00.000Z",
+        emailId: "email_1",
+      },
+      delivery: {
+        timestamp: "2026-07-13T01:00:00.000Z",
+        processingTimeMillis: 10,
+        recipients: ["recipient@example.com"],
+        smtpResponse: "250 ok",
+        reportingMTA: "mx.example.com",
+      },
+    };
+
+    await processEmailEvent(event);
+    expect(mockDb.dailyEmailUsage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { delivered: { increment: 1 } } }),
+    );
+    expect(mockWebhookEmit).toHaveBeenCalledWith(
+      7,
+      "email.delivered",
+      expect.anything(),
       { domainId: 11 },
     );
   });

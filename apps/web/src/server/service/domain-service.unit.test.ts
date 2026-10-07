@@ -12,7 +12,12 @@ const {
   mockAddDomain,
   mockDeleteDomain,
   mockCheckDomainLimit,
+  mockEnsureDeliveryLogs,
 } = vi.hoisted(() => ({
+  mockEnsureDeliveryLogs: vi.fn(async () => ({
+    status: "enabled",
+    created: [],
+  })),
   mockAddDomain: vi.fn(),
   mockDeleteDomain: vi.fn(),
   mockCheckDomainLimit: vi.fn(),
@@ -64,6 +69,7 @@ vi.mock("~/server/provider", () => ({
     getDomainStatus: mockGetDomainStatus,
     addDomain: mockAddDomain,
     deleteDomain: mockDeleteDomain,
+    ensureDeliveryLogs: mockEnsureDeliveryLogs,
   }),
   getProviderRegion: () => "eu-frankfurt-1",
 }));
@@ -527,6 +533,25 @@ describe("domain-service provider integration", () => {
       expect.objectContaining({ name: "mail.example.com" }),
       { domainId: 42 },
     );
+  });
+
+  it("enables delivery logs for a new domain without failing on errors", async () => {
+    mockAddDomain.mockResolvedValue({
+      providerDomainId: "ocid1.emaildomain.oc1..new",
+      dkim: { dkimId: "ocid1.dkim.oc1..new", selector: "sel" },
+    });
+    mockEnsureDeliveryLogs.mockClear();
+    mockEnsureDeliveryLogs.mockRejectedValueOnce(new Error("403"));
+
+    await expect(
+      createDomainRecord(7, "mail.example.com"),
+    ).resolves.toMatchObject({ name: "mail.example.com" });
+    expect(mockEnsureDeliveryLogs).toHaveBeenCalledWith({
+      name: "mail.example.com",
+      providerDomainId: "ocid1.emaildomain.oc1..new",
+      dkimId: "ocid1.dkim.oc1..new",
+      dkimSelector: "sel",
+    });
   });
 
   it("rejects regions other than the provider region", async () => {

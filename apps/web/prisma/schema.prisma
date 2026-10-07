@@ -42,6 +42,20 @@ model ProcessedProviderSuppression {
   createdAt DateTime @default(now())
 }
 
+// Email Delivery log records (relay / bounce / complaint) that were already
+// turned into events. Prevents duplicates across overlapping polls; pruned
+// after a few days by the delivery log poll job.
+model ProcessedProviderLogEvent {
+  id        String   @id
+  action    String
+  messageId String?
+  recipient String?
+  emailId   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // Necessary for Next auth
 model Account {
   id                       String  @id @default(cuid())

@@ -23,6 +23,30 @@ vi.mock("oci-email", () => ({
   },
 }));
 
+const { loggingClientInstances } = vi.hoisted(() => ({
+  loggingClientInstances: [] as Array<{ kind: string; regionId?: string }>,
+}));
+
+vi.mock("oci-logging", () => ({
+  LoggingManagementClient: class {
+    kind = "logging";
+    regionId?: string;
+    constructor() {
+      loggingClientInstances.push(this);
+    }
+  },
+}));
+
+vi.mock("oci-loggingsearch", () => ({
+  LogSearchClient: class {
+    kind = "search";
+    regionId?: string;
+    constructor() {
+      loggingClientInstances.push(this);
+    }
+  },
+}));
+
 vi.mock("oci-common", () => ({
   Region: { fromRegionId: (id: string) => ({ regionId: id }) },
   SimpleAuthenticationDetailsProvider: class {
@@ -37,6 +61,7 @@ vi.mock("~/server/logger/log", () => ({
 }));
 
 import {
+  createOciLoggingApis,
   createOciEmailApi,
   createOciProviderFromEnv,
   createSmtpTransport,
@@ -143,6 +168,29 @@ describe("factory", () => {
       PEM,
       null,
     ]);
+  });
+
+  it("creates the Logging + Log Search clients only with API credentials", () => {
+    loggingClientInstances.length = 0;
+    expect(createOciLoggingApis(readOciConfig({}))).toEqual({
+      logging: null,
+      logSearch: null,
+    });
+
+    const apis = createOciLoggingApis(readOciConfig(fullEnv));
+    expect(apis.logging).not.toBeNull();
+    expect(apis.logSearch).not.toBeNull();
+    expect(loggingClientInstances.map((c) => [c.kind, c.regionId])).toEqual([
+      ["logging", "eu-frankfurt-1"],
+      ["search", "eu-frankfurt-1"],
+    ]);
+  });
+
+  it("reads OCI_LOG_GROUP_NAME", () => {
+    expect(readOciConfig({}).logGroupName).toBeUndefined();
+    expect(
+      readOciConfig({ OCI_LOG_GROUP_NAME: "mail-logs" }).logGroupName,
+    ).toBe("mail-logs");
   });
 
   it("builds an OCI provider from env", () => {

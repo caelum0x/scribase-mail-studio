@@ -31,6 +31,11 @@ import { getChildLogger, logger, withLogger } from "../logger/log";
 import { randomUUID } from "crypto";
 import { SuppressionService } from "./suppression-service";
 import { WebhookService } from "./webhook-service";
+import {
+  NO_REPEAT,
+  RECIPIENT_DEDUPED_STATUSES,
+  evaluateRepeatEvent,
+} from "./email-event-dedupe";
 
 async function findEmailForEvent(data: MailEvent): Promise<Email | null> {
   if (data.mail.emailId) {
@@ -88,6 +93,25 @@ export async function processEmailEvent(data: MailEvent) {
     email.latestStatus === mailStatus &&
     mailStatus === EmailStatus.DELIVERY_DELAYED
   ) {
+    return true;
+  }
+
+  // Same outcome may arrive from the delivery logs and the suppression poll.
+  const repeat = RECIPIENT_DEDUPED_STATUSES.includes(mailStatus)
+    ? evaluateRepeatEvent(
+        mailStatus,
+        mailData,
+        (
+          await db.emailEvent.findMany({
+            where: { emailId: email.id, status: mailStatus },
+            select: { data: true },
+          })
+        ).map((event) => event.data),
+      )
+    : NO_REPEAT;
+
+  if (repeat.skip) {
+    logger.info({ mailStatus }, "Duplicate delivery outcome; skipping");
     return true;
   }
 
@@ -194,8 +218,13 @@ export async function processEmailEvent(data: MailEvent) {
 
   const isDuplicateEngagement = Boolean(existingMailEvent) && isEngagementEvent;
 
+  if (repeat.hardBounceUpgrade) {
+    await recordHardBounceUpgrade(email, today);
+  }
+
   if (
     !isDuplicateEngagement &&
+    !repeat.repeat &&
     [
       "DELIVERED",
       "OPENED",
@@ -333,6 +362,38 @@ export async function processEmailEvent(data: MailEvent) {
   }
 
   return true;
+}
+
+/**
+ * A permanent bounce after a transient one for the same email: "bounced" was
+ * already counted, only the hard-bounce counters are missing.
+ */
+async function recordHardBounceUpgrade(email: Email, today: string) {
+  const domainId = email.domainId ?? 0;
+  const type = email.campaignId ? "MARKETING" : "TRANSACTIONAL";
+  await db.dailyEmailUsage.upsert({
+    where: {
+      teamId_domainId_date_type: {
+        teamId: email.teamId,
+        domainId,
+        date: today,
+        type,
+      },
+    },
+    create: {
+      teamId: email.teamId,
+      domainId,
+      date: today,
+      type,
+      hardBounced: 1,
+    },
+    update: { hardBounced: { increment: 1 } },
+  });
+  await db.cumulatedMetrics.upsert({
+    where: { teamId_domainId: { teamId: email.teamId, domainId } },
+    update: { hardBounced: { increment: BigInt(1) } },
+    create: { teamId: email.teamId, domainId, hardBounced: BigInt(1) },
+  });
 }
 
 type EmailBounceSubType =

@@ -19,6 +19,8 @@ minimumReleaseAgeExclude:
   - oci-common@2.142.2
   - oci-email@2.142.2
   - oci-objectstorage@2.142.2
+  - oci-logging@2.142.2
+  - oci-loggingsearch@2.142.2
 
 # pnpm 10+ reads overrides from the workspace configuration. Keep this in sync
 # with package.json for deployment environments that still use pnpm 9.

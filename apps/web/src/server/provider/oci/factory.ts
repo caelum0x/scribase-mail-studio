@@ -1,5 +1,7 @@
 import nodemailer from "nodemailer";
 import { EmailClient } from "oci-email";
+import { LoggingManagementClient } from "oci-logging";
+import { LogSearchClient } from "oci-loggingsearch";
 import { Region, SimpleAuthenticationDetailsProvider } from "oci-common";
 import {
   isOciApiConfigured,
@@ -13,6 +15,7 @@ import {
   type OciEmailApi,
   type SmtpTransport,
 } from "./oci-provider";
+import type { OciLogSearchApi, OciLoggingApi } from "./delivery-logs";
 
 const SMTP_POOL_MAX_CONNECTIONS = 5;
 
@@ -42,6 +45,24 @@ export function createOciEmailApi(config: OciConfig): OciEmailApi | null {
   return client;
 }
 
+export function createOciLoggingApis(config: OciConfig): {
+  logging: OciLoggingApi | null;
+  logSearch: OciLogSearchApi | null;
+} {
+  const authenticationDetailsProvider = createOciAuthProvider(config);
+  if (!authenticationDetailsProvider) {
+    return { logging: null, logSearch: null };
+  }
+
+  const logging = new LoggingManagementClient({
+    authenticationDetailsProvider,
+  });
+  logging.regionId = config.region;
+  const logSearch = new LogSearchClient({ authenticationDetailsProvider });
+  logSearch.regionId = config.region;
+  return { logging, logSearch };
+}
+
 export function createSmtpTransport(config: OciConfig): SmtpTransport | null {
   if (!isSmtpConfigured(config)) {
     return null;
@@ -66,5 +87,6 @@ export function createOciProviderFromEnv(env: OciEnv) {
     config,
     api: createOciEmailApi(config),
     transport: createSmtpTransport(config),
+    ...createOciLoggingApis(config),
   });
 }

@@ -36,6 +36,8 @@
         "SMTP_PORT",
         "SMTP_PASS",
         "SUPPRESSION_POLL_CRON",
+        "DELIVERY_LOG_POLL_CRON",
+        "OCI_LOG_GROUP_NAME",
         "API_RATE_LIMIT",
         "AUTH_EMAIL_RATE_LIMIT",
         "NEXT_PUBLIC_IS_CLOUD",

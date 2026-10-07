@@ -109,6 +109,57 @@ export type ProviderSuppressionDetail = ProviderSuppressionSummary & {
   errorSource?: string;
 };
 
+/** Actions recorded in the provider's per-domain delivery log. */
+export type ProviderDeliveryAction =
+  | "relay"
+  | "bounce"
+  | "complaint"
+  | "open"
+  | "click"
+  | "unsubscribe"
+  | "unknown";
+
+/**
+ * One record from the provider delivery log (OCI Email Delivery
+ * "OutboundRelayed" service log). One record per recipient.
+ */
+export type ProviderDeliveryEvent = {
+  /** Stable, unique record id (used for dedupe across polls). */
+  id: string;
+  action: ProviderDeliveryAction;
+  timestamp: Date;
+  /** Message-ID without angle brackets. */
+  messageId?: string;
+  recipient?: string;
+  sender?: string;
+  /** Email domain the record belongs to. */
+  domain?: string;
+  bounceType?: "hard" | "soft";
+  bounceCategory?: string;
+  bounceCode?: string;
+  smtpStatus?: string;
+  message?: string;
+  /** Receiving mail server, e.g. `mx.example.com (192.0.2.1)`. */
+  recipientMailServer?: string;
+  processingTimeMs?: number;
+  reportGeneratedTime?: Date;
+};
+
+export type ProviderDeliveryEventPage = {
+  /** Records sorted by time ascending. */
+  events: ProviderDeliveryEvent[];
+  /** True when the page cap was hit; resume from the last event's time. */
+  truncated: boolean;
+};
+
+export type ProviderDeliveryLogsResult = {
+  /** enabled = logs exist; pending = domain not ready yet, retry later. */
+  status: "enabled" | "pending";
+  logGroupId?: string;
+  /** Categories created by this call (empty when everything existed). */
+  created: string[];
+};
+
 export type ApprovedSender = {
   id: string;
   email: string;
@@ -152,6 +203,19 @@ export interface EmailProvider {
   listSuppressions(since: Date): Promise<ProviderSuppressionSummary[]>;
   getSuppression(id: string): Promise<ProviderSuppressionDetail>;
   deleteSuppression(email: string): Promise<boolean>;
+
+  /**
+   * Idempotently enables the provider delivery logs for a sending domain.
+   * Safe to call repeatedly; results are cached per domain.
+   */
+  ensureDeliveryLogs(
+    domain: ProviderDomainRef,
+  ): Promise<ProviderDeliveryLogsResult>;
+  /** Delivery-log records (relay / bounce / complaint) in [since, until). */
+  listDeliveryEvents(
+    since: Date,
+    until: Date,
+  ): Promise<ProviderDeliveryEventPage>;
 
   getStatus(): Promise<ProviderStatus>;
 }

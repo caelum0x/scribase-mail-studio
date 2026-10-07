@@ -92,6 +92,11 @@ tracking links.
 ```env
 # Poll interval for bounces and complaints (cron, UTC). Default every 5 minutes.
 SUPPRESSION_POLL_CRON="*/5 * * * *"
+# Poll interval for delivered/bounced/complained events from the OCI Email
+# Delivery logs (cron, UTC). Default every minute.
+DELIVERY_LOG_POLL_CRON="* * * * *"
+# OCI Logging log group created for the Email Delivery service logs
+OCI_LOG_GROUP_NAME="scribase-mail"
 # Clear stored email bodies after N days
 EMAIL_CLEANUP_DAYS=30
 # Image uploads in the editor (OCI Object Storage)

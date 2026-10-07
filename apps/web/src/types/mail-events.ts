@@ -4,7 +4,8 @@
  * Events are produced by:
  * - the send pipeline (Send / Reject) when the SMTP relay accepts or refuses a message,
  * - the Scribase Mail tracking endpoints (Open / Click),
- * - the provider suppression poller (Bounce / Complaint).
+ * - the Email Delivery log poller (Delivery / Bounce / Complaint),
+ * - the provider suppression poller (Bounce / Complaint, fallback).
  */
 export interface MailMeta {
   timestamp: string;

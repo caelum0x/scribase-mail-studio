@@ -6,6 +6,8 @@ import {
   ProviderSendError,
   type ApprovedSender,
   type EmailProvider,
+  type ProviderDeliveryEventPage,
+  type ProviderDeliveryLogsResult,
   type ProviderDkimRecord,
   type ProviderDomainRef,
   type ProviderDomainResult,
@@ -26,6 +28,11 @@ import {
   mapSuppressionReason,
   stripAngleBrackets,
 } from "./mappers";
+import {
+  OciDeliveryLogs,
+  type OciLogSearchApi,
+  type OciLoggingApi,
+} from "./delivery-logs";
 
 /* eslint-disable no-unused-vars -- parameter names in type signatures */
 /** Subset of the OCI EmailClient used by Scribase Mail (eases mocking). */
@@ -82,6 +89,8 @@ export type OciEmailProviderDeps = {
   config: OciConfig;
   api: OciEmailApi | null;
   transport: SmtpTransport | null;
+  logging?: OciLoggingApi | null;
+  logSearch?: OciLogSearchApi | null;
   // eslint-disable-next-line no-unused-vars -- parameter name in type signature
   sleep?: (durationMs: number) => Promise<void>;
   senderCacheTtlMs?: number;
@@ -140,6 +149,7 @@ export class OciEmailProvider implements EmailProvider {
   private readonly domainActivePollAttempts: number;
   private readonly domainActivePollIntervalMs: number;
   private readonly approvedSenderCache = new Map<string, number>();
+  private readonly deliveryLogs: OciDeliveryLogs;
 
   constructor(deps: OciEmailProviderDeps) {
     this.config = deps.config;
@@ -151,6 +161,13 @@ export class OciEmailProvider implements EmailProvider {
     this.senderCacheTtlMs = deps.senderCacheTtlMs ?? 60 * 60 * 1000;
     this.domainActivePollAttempts = deps.domainActivePollAttempts ?? 10;
     this.domainActivePollIntervalMs = deps.domainActivePollIntervalMs ?? 2000;
+    this.deliveryLogs = new OciDeliveryLogs({
+      compartmentId: deps.config.compartmentId,
+      logGroupName: deps.config.logGroupName,
+      logging: deps.logging ?? null,
+      logSearch: deps.logSearch ?? null,
+      sleep: this.sleep,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -683,6 +700,38 @@ export class OciEmailProvider implements EmailProvider {
       );
       return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Delivery logs (delivered / bounced / complained events)
+  // ---------------------------------------------------------------------------
+
+  async ensureDeliveryLogs(
+    domain: ProviderDomainRef,
+  ): Promise<ProviderDeliveryLogsResult> {
+    if (
+      domain.providerDomainId &&
+      this.deliveryLogs.isEnsured(domain.providerDomainId)
+    ) {
+      return this.deliveryLogs.ensureForEmailDomain(
+        domain.providerDomainId,
+        domain.name,
+      );
+    }
+
+    const emailDomain = await this.loadEmailDomain(domain);
+    // Service logs can only be attached to an ACTIVE email domain.
+    if (!emailDomain || emailDomain.lifecycleState !== "ACTIVE") {
+      return { status: "pending", created: [] };
+    }
+    return this.deliveryLogs.ensureForEmailDomain(emailDomain.id, domain.name);
+  }
+
+  async listDeliveryEvents(
+    since: Date,
+    until: Date,
+  ): Promise<ProviderDeliveryEventPage> {
+    return this.deliveryLogs.listEvents(since, until);
   }
 
   // ---------------------------------------------------------------------------

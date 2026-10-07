@@ -17,6 +17,8 @@ export type OciConfig = {
   fingerprint: string | undefined;
   privateKey: string | undefined;
   passphrase: string | undefined;
+  /** OCI Logging log group holding the Email Delivery service logs. */
+  logGroupName?: string;
   smtp: OciSmtpConfig;
 };
 
@@ -29,6 +31,7 @@ export type OciEnv = {
   OCI_PRIVATE_KEY?: string;
   OCI_PRIVATE_KEY_PATH?: string;
   OCI_PRIVATE_KEY_PASSPHRASE?: string;
+  OCI_LOG_GROUP_NAME?: string;
   SMTP_HOST?: string;
   SMTP_PORT?: string | number;
   SMTP_USER?: string;
@@ -84,6 +87,7 @@ export function readOciConfig(
     fingerprint: env.OCI_FINGERPRINT,
     privateKey,
     passphrase: env.OCI_PRIVATE_KEY_PASSPHRASE || undefined,
+    logGroupName: env.OCI_LOG_GROUP_NAME || undefined,
     smtp: {
       host: env.SMTP_HOST,
       port: Number.isFinite(port) && port > 0 ? port : 587,

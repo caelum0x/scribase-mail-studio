@@ -47,6 +47,8 @@ export const env = createEnv({
     OCI_PRIVATE_KEY: z.string().optional(),
     OCI_PRIVATE_KEY_PATH: z.string().optional(),
     OCI_PRIVATE_KEY_PASSPHRASE: z.string().optional(),
+    // OCI Logging log group for Email Delivery service logs (delivery events)
+    OCI_LOG_GROUP_NAME: z.string().default("scribase-mail"),
     // SMTP relay used for sending (OCI Email Delivery SMTP credentials)
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.string().default("587"),
@@ -54,6 +56,8 @@ export const env = createEnv({
     SMTP_PASS: z.string().optional(),
     // How often the provider suppression list is polled for bounces/complaints
     SUPPRESSION_POLL_CRON: z.string().default("*/5 * * * *"),
+    // How often the Email Delivery logs are polled for delivered/bounced/complained
+    DELIVERY_LOG_POLL_CRON: z.string().default("* * * * *"),
     REPUTATION_GUARD_CRON: z.string().default("*/10 * * * *"),
     API_RATE_LIMIT: z
       .string()
@@ -83,9 +87,9 @@ export const env = createEnv({
     SMTP_PUBLIC_USER: z.string().default("scribase"),
     CONTACT_BOOK_ID: z.string().optional(),
     EMAIL_CLEANUP_DAYS: z
-        .string()
-        .optional()
-        .transform((str) => (str ? parseInt(str, 10) : undefined)),
+      .string()
+      .optional()
+      .transform((str) => (str ? parseInt(str, 10) : undefined)),
   },
 
   /**
@@ -126,9 +130,11 @@ export const env = createEnv({
     OCI_PRIVATE_KEY: process.env.OCI_PRIVATE_KEY,
     OCI_PRIVATE_KEY_PATH: process.env.OCI_PRIVATE_KEY_PATH,
     OCI_PRIVATE_KEY_PASSPHRASE: process.env.OCI_PRIVATE_KEY_PASSPHRASE,
+    OCI_LOG_GROUP_NAME: process.env.OCI_LOG_GROUP_NAME,
     SMTP_PORT: process.env.SMTP_PORT,
     SMTP_PASS: process.env.SMTP_PASS,
     SUPPRESSION_POLL_CRON: process.env.SUPPRESSION_POLL_CRON,
+    DELIVERY_LOG_POLL_CRON: process.env.DELIVERY_LOG_POLL_CRON,
     REPUTATION_GUARD_CRON: process.env.REPUTATION_GUARD_CRON,
     API_RATE_LIMIT: process.env.API_RATE_LIMIT,
     AUTH_EMAIL_RATE_LIMIT: process.env.AUTH_EMAIL_RATE_LIMIT,

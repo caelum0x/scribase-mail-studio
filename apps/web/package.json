@@ -64,6 +64,8 @@
     "nodemailer": "^8.0.5",
     "oci-common": "2.142.2",
     "oci-email": "2.142.2",
+    "oci-logging": "2.142.2",
+    "oci-loggingsearch": "2.142.2",
     "oci-objectstorage": "2.142.2",
     "pino": "^9.7.0",
     "pino-pretty": "^13.0.0",

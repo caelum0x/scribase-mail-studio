@@ -449,9 +449,33 @@ export async function createDomain(
     },
   });
 
+  void enableDeliveryLogs(domain);
   await emitDomainEvent(domain, "domain.created");
 
   return withDnsRecords(domain);
+}
+
+/**
+ * Enables the provider delivery logs (delivered / bounced / complained
+ * events) for a domain. Idempotent; never fails domain creation or
+ * verification. The delivery log poll job retries for verified domains.
+ */
+export async function enableDeliveryLogs(domain: Domain) {
+  try {
+    const result = await getEmailProvider().ensureDeliveryLogs({
+      name: domain.name,
+      providerDomainId: domain.providerDomainId,
+      dkimId: domain.dkimId,
+      dkimSelector: domain.dkimSelector,
+    });
+    return result;
+  } catch (error) {
+    logger.warn(
+      { err: error, domainId: domain.id },
+      "[DomainService]: Failed to enable delivery logs",
+    );
+    return null;
+  }
 }
 
 export async function getDomain(id: number, teamId: number) {
@@ -550,6 +574,7 @@ export async function refreshDomainVerification(
 
   if (updatedDomain.status === DomainStatus.SUCCESS) {
     await markDomainEverVerified(domain.id);
+    void enableDeliveryLogs(updatedDomain);
   }
 
   if (

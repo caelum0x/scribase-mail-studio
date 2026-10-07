@@ -31,6 +31,11 @@ export async function register() {
         await import("~/server/jobs/provider-suppression-poll-job");
       await initProviderSuppressionPollJob();
 
+      // Delivered / bounced / complained from the Email Delivery logs.
+      const { initProviderDeliveryLogPollJob } =
+        await import("~/server/jobs/provider-delivery-log-poll-job");
+      await initProviderDeliveryLogPollJob();
+
       // Shared-tenancy abuse control; only multi-tenant (cloud) installs need it.
       if (isCloud()) {
         const { initReputationGuardJob } =

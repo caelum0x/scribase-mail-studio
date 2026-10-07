@@ -16,6 +16,23 @@ the box, and check disk first (the image build needs about 3 GB free).
   for a user allowed to `manage email-family` in the compartment. The values
   used by Rally are in `~/.rally-secrets/oci-smtp.env` (SMTP) and `~/.oci/config`
   (API) on the Mac.
+- OCI Logging, for delivered / bounced / complained events: the same API user
+  must be able to create the log group and service logs and read log content.
+  Policy statements (group of the API user, same compartment as
+  `OCI_COMPARTMENT_ID`, or `in tenancy` when that is unset):
+
+  ```
+  Allow group <api-user-group> to manage log-groups in compartment <compartment>
+  Allow group <api-user-group> to read log-content in compartment <compartment>
+  ```
+
+  `manage log-groups` covers CreateLogGroup/CreateLog; enabling a service log
+  also needs update rights on the email domain, which the existing
+  `manage email-family` grant already gives; `read log-content` is what the
+  Logging Search API needs (docs.oracle.com Logging > Logs and Log Groups).
+  Users in the Administrators group need nothing extra. Without these,
+  sending still works and bounces/complaints fall back to the 5-minute suppression-list poll, but
+  there are no "delivered" events.
 - `FROM_EMAIL` must be on a domain that is ACTIVE in OCI Email Delivery.
   `scribase.com` is already an OCI email domain; use
   `Scribase Mail <noreply@scribase.com>` or add `mail.scribase.com` in OCI first.
@@ -102,7 +119,24 @@ curl -sS https://mail.scribase.com/api/v1/emails \
 ```
 
 The email should reach `SENT` within seconds (approved sender auto-created on
-the first send).
+the first send) and `DELIVERED` within about 1-5 minutes (OCI Logging ingest
+delay plus the one-minute poll).
+
+5. Delivery events. On its first run the delivery log poll job creates the
+   `scribase-mail` log group (`OCI_LOG_GROUP_NAME`) and, for every verified
+   domain, an `emaildelivery` service log per category (`outboundrelayed`,
+   `outboundaccepted`) with the OCI email domain as resource. This also
+   covers domains that existed before this feature; nothing to click in the
+   Console. Check in OCI Console > Observability > Logging > Log groups, or:
+
+```sh
+docker logs scribase-mail-web 2>&1 | grep -E "DeliveryLogPollJob|OciDeliveryLogs"
+```
+
+   A "Could not enable delivery logs" warning with 404/NotAuthorized means the
+   IAM policy above is missing (retried every 30 minutes). If a domain's logs
+   were already enabled from the Console into another log group in the same
+   compartment, that is fine: the search covers the whole compartment.
 
 ## 7. Backups
 
@@ -130,5 +164,11 @@ To roll back to a previous build, set `GIT_SHA` to the previous image tag
   create a team and send through the owner's OCI tenancy once their domain is
   verified. Keep email sign-in limited (for example only `ADMIN_EMAIL` and
   invited users) until abuse controls are in place.
+- Delivery events come from the OCI Email Delivery "OutboundRelayed" log
+  (`relay` -> delivered, `bounce` -> bounced, hard = permanent / soft =
+  transient, `complaint` -> complained), read every minute via Logging Search
+  (`DELIVERY_LOG_POLL_CRON`). OCI open/click/unsubscribe records are ignored;
+  Scribase Mail tracks those itself. The suppression-list poll stays as a
+  fallback; the same bounce/complaint for the same recipient is counted once.
 - OCI daily/rate limits apply to the whole tenancy, shared with Rally and other
   products. Set Admin > Email provider > Send rate accordingly.
