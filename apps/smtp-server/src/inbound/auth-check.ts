@@ -35,12 +35,14 @@ export async function checkAuth(
     seal: undefined,
   });
 
-  const spf = result.spf?.status?.result ?? null;
+  // mailauth returns `false` for checks it could not run.
+  const spf = result.spf ? (result.spf.status?.result ?? null) : null;
   const dkim =
     result.dkim?.results?.[0]?.status?.result ??
     (result.dkim?.results?.length ? "none" : null);
-  const dmarcResult = result.dmarc?.status?.result ?? null;
-  const dmarcPolicy = result.dmarc?.policy ?? null;
+  const dmarc = result.dmarc || null;
+  const dmarcResult = dmarc?.status?.result ?? null;
+  const dmarcPolicy = dmarc?.policy ?? null;
   const dmarcReject =
     dmarcPolicy === "reject" &&
     (dmarcResult === "fail" || dmarcResult === "permerror");

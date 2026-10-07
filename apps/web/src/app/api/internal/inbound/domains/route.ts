@@ -9,16 +9,11 @@ export const dynamic = "force-dynamic";
 
 import { db } from "~/server/db";
 
-const INTERNAL_SECRET = process.env.INBOUND_INTERNAL_SECRET ?? "";
-const SECRET_CONFIGURED = INTERNAL_SECRET.length > 0;
+import { checkInternalSecret } from "~/server/internal/internal-secret";
 
 export async function GET(request: Request): Promise<Response> {
-  if (SECRET_CONFIGURED) {
-    const header = request.headers.get("X-Internal-Secret");
-    if (!header || header !== INTERNAL_SECRET) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = checkInternalSecret(request);
+  if (denied) return denied;
 
   const domains = await db.domain.findMany({
     where: { receivingEnabled: true },

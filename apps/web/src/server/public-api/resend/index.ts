@@ -9,8 +9,9 @@ import { registerReceivedEmailRoutes } from "./received";
  */
 export function buildResendApp() {
   const app = getResendApp();
-  registerEmailRoutes(app);
+  // Before the email routes: GET /emails/:id would otherwise match /emails/received.
   registerReceivedEmailRoutes(app);
+  registerEmailRoutes(app);
   return app;
 }
 

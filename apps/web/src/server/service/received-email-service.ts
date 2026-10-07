@@ -83,7 +83,7 @@ export async function persistReceivedEmail(
       subject: input.subject,
       text: input.text ?? null,
       html: input.html ?? null,
-      headers: input.headers ?? null,
+      headers: input.headers ?? undefined,
       rawStorageKey: input.rawStorageKey ?? null,
       sizeBytes: input.sizeBytes,
       spfResult: input.spfResult ?? null,
@@ -119,7 +119,8 @@ export async function persistReceivedEmail(
     dmarcResult: received.dmarcResult,
     sizeBytes: received.sizeBytes,
     createdAt: received.createdAt.toISOString(),
-  }, { domainId: domain.id }).catch((err: unknown) => {
+  }, { domainId: domain.id })
+    ?.catch((err: unknown) => {
     logger.error({ err, receivedId: received.id }, "Failed to enqueue email.received webhook");
   });
 

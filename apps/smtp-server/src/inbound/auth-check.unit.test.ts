@@ -30,7 +30,7 @@ describe("checkAuth", () => {
       spf: { status: { result: "pass" } },
       dkim: { results: [{ status: { result: "pass" } }] },
       dmarc: { status: { result: "pass" }, policy: "none" },
-    } as ReturnType<typeof authenticate> extends Promise<infer R> ? R : never);
+    } as unknown as Awaited<ReturnType<typeof authenticate>>);
 
     const result = await checkAuth(SAMPLE_RAW, "1.2.3.4", "sender@example.com", "mail.example.com");
 
@@ -45,7 +45,7 @@ describe("checkAuth", () => {
       spf: { status: { result: "fail" } },
       dkim: { results: [{ status: { result: "fail" } }] },
       dmarc: { status: { result: "fail" }, policy: "reject" },
-    } as ReturnType<typeof authenticate> extends Promise<infer R> ? R : never);
+    } as unknown as Awaited<ReturnType<typeof authenticate>>);
 
     const result = await checkAuth(SAMPLE_RAW, "5.6.7.8", "spammer@evil.com", "evil.com");
 
@@ -58,7 +58,7 @@ describe("checkAuth", () => {
       spf: { status: { result: "fail" } },
       dkim: { results: [] },
       dmarc: { status: { result: "fail" }, policy: "quarantine" },
-    } as ReturnType<typeof authenticate> extends Promise<infer R> ? R : never);
+    } as unknown as Awaited<ReturnType<typeof authenticate>>);
 
     const result = await checkAuth(SAMPLE_RAW, "5.6.7.8", "spammer@evil.com", "evil.com");
 

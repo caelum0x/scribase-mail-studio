@@ -5,6 +5,8 @@ import fs from "fs";
 
 // Ensure OCI env vars are NOT set so we exercise the local-disk fallback.
 beforeEach(() => {
+  // storage.ts reads its env at import time; reload it for each test's dir.
+  vi.resetModules();
   delete process.env.OCI_STORAGE_NAMESPACE;
   delete process.env.OCI_STORAGE_BUCKET;
   delete process.env.OCI_PRIVATE_KEY;

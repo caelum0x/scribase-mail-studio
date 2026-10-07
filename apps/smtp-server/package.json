@@ -15,10 +15,12 @@
     "@types/mailparser": "^3.4.5",
     "@types/smtp-server": "^3.5.10",
     "dotenv": "^16.5.0",
-    "mailauth": "^5.2.0",
+    "mailauth": "^7.1.1",
     "mailparser": "^3.9.8",
     "nodemailer": "^8.0.5",
-    "smtp-server": "^3.18.4"
+    "smtp-server": "^3.18.4",
+    "oci-common": "2.142.2",
+    "oci-objectstorage": "2.142.2"
   },
   "devDependencies": {
     "@types/node": "^22.15.2",

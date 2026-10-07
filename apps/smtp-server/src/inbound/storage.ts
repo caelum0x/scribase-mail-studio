@@ -12,22 +12,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 
-// Lazily import OCI SDK only when env vars are present to keep cold starts fast
-// in environments without OCI credentials.
-type OciClientLike = {
-  putObject(req: {
-    namespaceName: string;
-    bucketName: string;
-    putObjectBody: Buffer;
-    objectName: string;
-    contentLength: number;
-    contentType?: string;
-  }): Promise<void>;
-};
-
-type OciAuthProvider = {
-  new (config: object): OciAuthProvider;
-};
+type OciObjectStorageClient = import("oci-objectstorage").ObjectStorageClient;
 
 const OCI_NAMESPACE = process.env.OCI_STORAGE_NAMESPACE ?? "";
 const OCI_BUCKET = process.env.OCI_STORAGE_BUCKET ?? "";
@@ -42,48 +27,38 @@ function isOciConfigured(): boolean {
   );
 }
 
-async function getOciClient(): Promise<OciClientLike | null> {
+let clientPromise: Promise<OciObjectStorageClient | null> | null = null;
+
+// The OCI SDK is imported lazily so dev setups without credentials stay light.
+// Once OCI is configured, errors surface instead of silently writing to disk.
+async function createOciClient(): Promise<OciObjectStorageClient | null> {
   if (!isOciConfigured()) return null;
-  try {
-    // Dynamic import to avoid loading 3 MB of OCI SDK unless configured.
-    const { ObjectStorageClient } = await import("oci-objectstorage") as {
-      ObjectStorageClient: new (cfg: object) => OciClientLike;
-    };
-    const { SimpleAuthenticationDetailsProvider } = await import(
-      "oci-common"
-    ) as {
-      SimpleAuthenticationDetailsProvider: OciAuthProvider;
-    };
 
-    const privateKeyContent = process.env.OCI_PRIVATE_KEY
-      ? Buffer.from(process.env.OCI_PRIVATE_KEY, "utf-8")
-      : process.env.OCI_PRIVATE_KEY_PATH
-        ? readFileSync(process.env.OCI_PRIVATE_KEY_PATH)
-        : null;
+  const [{ ObjectStorageClient }, common] = await Promise.all([
+    import("oci-objectstorage"),
+    import("oci-common"),
+  ]);
+  const privateKey = process.env.OCI_PRIVATE_KEY
+    ? process.env.OCI_PRIVATE_KEY
+    : readFileSync(process.env.OCI_PRIVATE_KEY_PATH as string, "utf-8");
 
-    if (!privateKeyContent) return null;
+  const provider = new common.SimpleAuthenticationDetailsProvider(
+    process.env.OCI_TENANCY ?? "",
+    process.env.OCI_USER ?? "",
+    process.env.OCI_FINGERPRINT ?? "",
+    privateKey,
+    process.env.OCI_PRIVATE_KEY_PASSPHRASE ?? null,
+    common.Region.fromRegionId(process.env.OCI_REGION ?? "eu-frankfurt-1"),
+  );
+  return new ObjectStorageClient({ authenticationDetailsProvider: provider });
+}
 
-    const provider = new (SimpleAuthenticationDetailsProvider as unknown as new (
-      tenancy: string,
-      user: string,
-      fingerprint: string,
-      privateKey: string,
-      passphrase: string | null,
-      region: string,
-    ) => object)(
-      process.env.OCI_TENANCY ?? "",
-      process.env.OCI_USER ?? "",
-      process.env.OCI_FINGERPRINT ?? "",
-      privateKeyContent.toString("utf-8"),
-      process.env.OCI_PRIVATE_KEY_PASSPHRASE ?? null,
-      process.env.OCI_REGION ?? "eu-frankfurt-1",
-    );
-
-    const client = new ObjectStorageClient({ authenticationDetailsProvider: provider });
-    return client as unknown as OciClientLike;
-  } catch {
-    return null;
-  }
+function getOciClient(): Promise<OciObjectStorageClient | null> {
+  clientPromise ??= createOciClient().catch((error: unknown) => {
+    clientPromise = null; // retry on the next message
+    throw error;
+  });
+  return clientPromise;
 }
 
 /** Upload a buffer and return the object key. */
@@ -95,6 +70,7 @@ export async function storeObject(
   const ociClient = await getOciClient();
 
   if (ociClient) {
+    // Throws on failure, so the MX answers 4xx and the sender retries.
     await ociClient.putObject({
       namespaceName: OCI_NAMESPACE,
       bucketName: OCI_BUCKET,

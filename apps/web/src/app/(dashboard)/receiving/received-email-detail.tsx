@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "~/trpc/react";
+import { getReviewPreviewSrcDoc } from "~/lib/email-preview";
 import Spinner from "@usesend/ui/src/spinner";
 import { Button } from "@usesend/ui/src/button";
 import { X } from "lucide-react";
@@ -13,6 +14,9 @@ interface Props {
 
 export default function ReceivedEmailDetail({ id, onClose }: Props) {
   const { data, isLoading } = api.receivedEmail.get.useQuery({ id });
+  const rawHtml = (data as Record<string, unknown> | undefined)?.html;
+  const previewSrcDoc =
+    typeof rawHtml === "string" ? getReviewPreviewSrcDoc(rawHtml, null) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/30">
@@ -50,22 +54,24 @@ export default function ReceivedEmailDetail({ id, onClose }: Props) {
             </div>
 
             {/* Sandboxed HTML preview — no remote loads */}
-            {(data as Record<string, unknown>).html && (
+            {previewSrcDoc ? (
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                   HTML Preview
                 </p>
                 <iframe
-                  srcDoc={(data as Record<string, unknown>).html as string}
-                  sandbox="allow-same-origin"
+                  // Untrusted inbound HTML: no scripts, no same-origin, and the
+                  // CSP blocks remote loads (tracking pixels, phishing pages).
+                  srcDoc={previewSrcDoc}
+                  sandbox=""
                   className="w-full rounded border bg-white"
                   style={{ minHeight: "400px" }}
                   title="Email preview"
                 />
               </div>
-            )}
+            ) : null}
 
-            {!(data as Record<string, unknown>).html && (data as Record<string, unknown>).text && (
+            {!previewSrcDoc && typeof (data as Record<string, unknown>).text === "string" && (
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                   Plain Text
@@ -89,7 +95,7 @@ export default function ReceivedEmailDetail({ id, onClose }: Props) {
                       <span className="text-muted-foreground text-xs">
                         ({att.size as number} bytes)
                       </span>
-                      {att.download_url && (
+                      {Boolean(att.download_url) && (
                         <a
                           href={att.download_url as string}
                           target="_blank"

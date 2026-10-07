@@ -30,11 +30,16 @@ vi.mock("~/server/public-api/auth", () => ({ getTeamFromToken: mockGetTeamFromTo
 vi.mock("~/server/redis", () => ({
   getRedis: () => mockRedis,
   redisKey: (k: string) => k,
+  BULL_PREFIX: "bull",
+}));
+vi.mock("~/server/service/email-queue-service", () => ({
+  EmailQueueService: { queueEmail: vi.fn() },
 }));
 vi.mock("~/server/db", () => ({ db: mockDb }));
+vi.mock("~/server/mailer", () => ({ sendMail: vi.fn() }));
 vi.mock("~/utils/common", () => ({ isSelfHosted: () => false }));
 vi.mock("~/server/service/inbound-storage-service", () => ({
-  getStorageSignedDownloadUrl: vi.fn().mockResolvedValue("https://storage.example.com/signed-url"),
+  getStorageSignedDownloadUrl: vi.fn(async () => "https://storage.example.com/signed-url"),
 }));
 
 import { buildResendApp } from "~/server/public-api/resend";

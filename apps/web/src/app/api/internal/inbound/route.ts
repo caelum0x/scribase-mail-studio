@@ -17,19 +17,7 @@ import { persistReceivedEmail } from "~/server/service/received-email-service";
 
 export const dynamic = "force-dynamic";
 
-const INTERNAL_SECRET = process.env.INBOUND_INTERNAL_SECRET ?? "";
-
-function checkSecret(request: Request): Response | null {
-  // If no secret is configured, allow any request (useful for local dev).
-  if (!INBOUND_INTERNAL_SECRET_CONFIGURED) return null;
-  const header = request.headers.get("X-Internal-Secret");
-  if (!header || header !== INTERNAL_SECRET) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  return null;
-}
-
-const INBOUND_INTERNAL_SECRET_CONFIGURED = INTERNAL_SECRET.length > 0;
+import { checkInternalSecret } from "~/server/internal/internal-secret";
 
 // ─── GET /api/internal/inbound/domains ────────────────────────────────────────
 // This is handled by /api/internal/inbound/domains/route.ts but we expose it
@@ -69,7 +57,7 @@ const InboundMailSchema = z.object({
 });
 
 export async function POST(request: Request): Promise<Response> {
-  const authError = checkSecret(request);
+  const authError = checkInternalSecret(request);
   if (authError) return authError;
 
   let body: unknown;
