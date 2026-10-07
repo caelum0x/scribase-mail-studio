@@ -1,0 +1,29 @@
+{
+  "name": "@scribase-mail/cli",
+  "version": "0.1.0",
+  "description": "CLI for Scribase Mail — send email, manage domains, API keys and more",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "scribase-mail": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["cli", "email", "scribase", "resend"],
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "@usesend/eslint-config": "workspace:*",
+    "@usesend/typescript-config": "workspace:*",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
+  }
+}

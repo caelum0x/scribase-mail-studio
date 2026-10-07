@@ -1,0 +1,188 @@
+---
+title: Send email from Neon / Next.js
+description: "Trigger transactional emails from your Next.js + Neon Postgres backend"
+icon: bolt
+---
+
+## Overview
+
+This guide shows how to send transactional emails from a Next.js application
+that uses [Neon](https://neon.tech) as its Postgres database.  Scribase Mail
+is a drop-in replacement for Resend — if you already use the Resend SDK, see
+the [Resend migration guide](/guides/resend-migration) to switch in one step.
+
+---
+
+## Prerequisites
+
+- A [Scribase Mail account](https://mail.scribase.com) and API key
+- A verified sending domain
+- A Next.js project connected to Neon Postgres
+
+---
+
+## Option A: Resend SDK with base URL override (recommended)
+
+If your project already uses the `resend` npm package, no code changes are
+required.  Set the base URL environment variable and keep everything else the
+same.
+
+```bash
+# .env.local
+RESEND_API_KEY=sm_...
+RESEND_BASE_URL=https://mail-api.scribase.com
+```
+
+```typescript
+// lib/email.ts
+import { Resend } from "resend";
+
+export const resend = new Resend(process.env.RESEND_API_KEY, {
+  baseUrl: process.env.RESEND_BASE_URL,
+});
+```
+
+---
+
+## Option B: Native Scribase Mail SDK
+
+```bash
+npm install usesend-js
+```
+
+```bash
+# .env.local
+USESEND_API_KEY=sm_...
+```
+
+```typescript
+// lib/email.ts
+import { UseSend } from "usesend-js";
+
+export const mail = new UseSend(process.env.USESEND_API_KEY);
+```
+
+---
+
+## Sending from a Server Action (App Router)
+
+```typescript
+// app/actions/welcome.ts
+"use server";
+
+import { mail } from "@/lib/email";
+import { db } from "@/lib/db"; // your Neon/Drizzle/Prisma client
+
+export async function sendWelcomeEmail(userId: string) {
+  const user = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.id, userId),
+  });
+
+  if (!user) throw new Error("User not found");
+
+  const { data, error } = await mail.emails.send({
+    from: "noreply@yourdomain.com",
+    to: user.email,
+    subject: "Welcome!",
+    html: `<p>Hi ${user.name}, welcome aboard.</p>`,
+  });
+
+  if (error) {
+    console.error("Failed to send welcome email:", error);
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+```
+
+---
+
+## Sending from an API Route (Pages Router)
+
+```typescript
+// pages/api/send-welcome.ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { mail } from "@/lib/email";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  const { to, name } = req.body as { to: string; name: string };
+
+  const { data, error } = await mail.emails.send({
+    from: "noreply@yourdomain.com",
+    to,
+    subject: `Welcome, ${name}!`,
+    html: `<p>Hi ${name}, thanks for signing up.</p>`,
+  });
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  return res.status(200).json(data);
+}
+```
+
+---
+
+## Scheduling emails
+
+Send a follow-up 3 days after signup:
+
+```typescript
+const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+await mail.emails.send({
+  from: "noreply@yourdomain.com",
+  to: user.email,
+  subject: "How are you finding it?",
+  html: "<p>We'd love to hear your feedback.</p>",
+  // Scribase Mail also accepts ISO 8601 and natural language:
+  scheduled_at: threeDaysFromNow.toISOString(),
+});
+```
+
+---
+
+## Storing email IDs in Neon
+
+Track sent emails in your database for status checks or re-send logic:
+
+```typescript
+const { data, error } = await mail.emails.send({ ... });
+
+if (data?.emailId) {
+  await db.insert(emailLog).values({
+    userId,
+    externalId: data.emailId,
+    sentAt: new Date(),
+  });
+}
+```
+
+---
+
+## Error handling
+
+```typescript
+const { data, error } = await mail.emails.send({ ... });
+
+if (error) {
+  // error.code is the Resend/Scribase Mail error name (e.g. "validation_error")
+  // error.message is human-readable
+  switch (error.code) {
+    case "validation_error":
+      // Bad request — fix the payload
+      break;
+    case "UNAUTHORIZED":
+    case "invalid_api_key":
+      // Rotate your API key
+      break;
+    default:
+      // Log and retry
+      console.error("[email]", error);
+  }
+}
+```

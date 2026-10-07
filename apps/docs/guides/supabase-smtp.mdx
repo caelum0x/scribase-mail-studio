@@ -1,0 +1,108 @@
+---
+title: Supabase Custom SMTP
+description: "Use Scribase Mail as the SMTP provider for Supabase Auth emails"
+icon: database
+---
+
+## Overview
+
+By default Supabase sends auth emails (magic links, password resets, confirmations)
+through its own mail infrastructure.  You can replace this with Scribase Mail to:
+
+- Use your own verified domain and sender address
+- Monitor all auth emails in the Scribase Mail dashboard
+- Apply your own rate limits and suppression lists
+
+---
+
+## Prerequisites
+
+- A [Scribase Mail account](https://mail.scribase.com) with a verified domain
+- A Scribase Mail API key (Settings > API Keys)
+- A Supabase project
+
+---
+
+## SMTP credentials
+
+| Setting | Value |
+|---|---|
+| Host | `smtp.mail.scribase.com` |
+| Port | `465` (TLS) or `587` (STARTTLS) |
+| Username | `scribase` |
+| Password | Your Scribase Mail API key (`sm_...`) |
+| Sender name | Your choice, e.g. `Your App` |
+| Sender email | A verified address on your domain |
+
+---
+
+## Step-by-step setup
+
+<Steps>
+  <Step title="Verify your sending domain">
+    Go to [Domains](https://mail.scribase.com/domains) in your Scribase Mail
+    dashboard, add your domain, and add the DNS records Scribase Mail shows you
+    (SPF, DKIM, MX/Return-Path).
+
+    Verification usually takes a few minutes after DNS propagation.
+  </Step>
+  <Step title="Open Supabase Auth settings">
+    In the Supabase dashboard, go to **Authentication > Settings > SMTP provider**.
+
+    Toggle **Enable Custom SMTP** to on.
+  </Step>
+  <Step title="Enter Scribase Mail credentials">
+    Fill in the following fields:
+
+    - **Host**: `smtp.mail.scribase.com`
+    - **Port**: `465`
+    - **Username**: `scribase`
+    - **Password**: your Scribase Mail API key
+    - **Sender email**: `noreply@yourdomain.com` (must be on your verified domain)
+    - **Sender name**: your app name
+  </Step>
+  <Step title="Send a test email">
+    Click **Save** and then **Test configuration** in the Supabase Auth settings.
+    Supabase will send a test email through Scribase Mail.
+
+    You should see it appear in [Logs](https://mail.scribase.com/logs) in the
+    Scribase Mail dashboard within a few seconds.
+  </Step>
+</Steps>
+
+---
+
+## Supabase environment variables (self-hosted)
+
+If you are running a self-hosted Supabase instance via Docker or Kubernetes, set
+these environment variables in your `auth` container:
+
+```bash
+GOTRUE_SMTP_HOST=smtp.mail.scribase.com
+GOTRUE_SMTP_PORT=465
+GOTRUE_SMTP_USER=scribase
+GOTRUE_SMTP_PASS=sm_...
+GOTRUE_SMTP_ADMIN_EMAIL=noreply@yourdomain.com
+GOTRUE_MAILER_AUTOCONFIRM=false
+```
+
+---
+
+## Troubleshooting
+
+**Authentication failed**
+Verify that the password is your Scribase Mail API key, not your dashboard
+password.  API keys are shown once at creation time; create a new one if needed.
+
+**"Domain not verified" error**
+Check the [Domains](https://mail.scribase.com/domains) page.  All DNS records
+must show a green checkmark before SMTP sending will work.
+
+**Emails not arriving**
+Check the [Logs](https://mail.scribase.com/logs) and [Suppressions](https://mail.scribase.com/suppressions)
+pages.  The recipient address may be on the suppression list.
+
+**Rate limits**
+Supabase does not throttle individual auth emails, but Scribase Mail enforces a
+per-team rate limit.  If you exceed it during load testing, add a short delay
+between signup events.

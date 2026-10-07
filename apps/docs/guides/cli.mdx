@@ -1,0 +1,182 @@
+---
+title: CLI
+description: "Send email and manage your account from the command line"
+icon: terminal
+---
+
+## Overview
+
+The `@scribase-mail/cli` package provides the `scribase-mail` command-line tool.
+It calls the Scribase Mail Resend-compatible API and stores your API key in
+`~/.config/scribase-mail/config.json` (mode 600).
+
+---
+
+## Installation
+
+```bash
+npm install -g @scribase-mail/cli
+```
+
+Or use it without installing:
+
+```bash
+SCRIBASE_MAIL_API_KEY=sm_... npx @scribase-mail/cli emails list
+```
+
+---
+
+## Login
+
+Store your API key locally (prompts interactively if `--key` is omitted):
+
+```bash
+scribase-mail login
+# Enter your Scribase Mail API key: sm_...
+# API key saved to /Users/you/.config/scribase-mail/config.json
+```
+
+To use a self-hosted instance:
+
+```bash
+scribase-mail login --key sm_... --base-url https://mail.mycompany.com/api/resend
+```
+
+---
+
+## Emails
+
+### Send
+
+```bash
+scribase-mail emails send \
+  --from "Acme <noreply@acme.com>" \
+  --to user@example.com \
+  --subject "Welcome to Acme" \
+  --html "<p>Thanks for signing up!</p>"
+```
+
+Send to multiple recipients:
+
+```bash
+scribase-mail emails send \
+  --from noreply@acme.com \
+  --to alice@example.com \
+  --to bob@example.com \
+  --subject "Team invite" \
+  --text "You have been invited."
+```
+
+Schedule delivery:
+
+```bash
+scribase-mail emails send \
+  --from noreply@acme.com \
+  --to user@example.com \
+  --subject "Reminder" \
+  --text "This is your reminder." \
+  --scheduled-at "tomorrow at 9am"
+```
+
+Add tags:
+
+```bash
+scribase-mail emails send \
+  --from noreply@acme.com \
+  --to user@example.com \
+  --subject "Welcome" \
+  --html "<p>Hi</p>" \
+  --tag campaign=onboarding \
+  --tag version=v2
+```
+
+### List
+
+```bash
+scribase-mail emails list
+scribase-mail emails list --limit 50
+scribase-mail emails list --after em_abc123
+```
+
+### Get
+
+```bash
+scribase-mail emails get em_abc123
+```
+
+### Cancel
+
+Cancel a scheduled email before it is sent:
+
+```bash
+scribase-mail emails cancel em_abc123
+```
+
+### Reschedule
+
+```bash
+scribase-mail emails reschedule em_abc123 --at "in 2 hours"
+```
+
+---
+
+## Domains
+
+```bash
+# List all domains
+scribase-mail domains list
+
+# Add a domain
+scribase-mail domains add --name mail.example.com
+
+# Check DNS records and status
+scribase-mail domains get dom_abc123
+
+# Trigger verification after adding DNS records
+scribase-mail domains verify dom_abc123
+
+# Remove a domain
+scribase-mail domains delete dom_abc123
+```
+
+---
+
+## API keys
+
+```bash
+# List all API keys
+scribase-mail api-keys list
+
+# Create a sending-only key restricted to one domain
+scribase-mail api-keys create \
+  --name "Transactional" \
+  --permission sending_access \
+  --domain-id dom_abc123
+
+# Revoke a key
+scribase-mail api-keys delete key_abc123
+```
+
+---
+
+## Environment variables
+
+| Variable | Description |
+|---|---|
+| `SCRIBASE_MAIL_API_KEY` | API key (takes precedence over stored config) |
+| `RESEND_API_KEY` | Accepted as a fallback |
+| `SCRIBASE_MAIL_BASE_URL` | Override base URL (default: `https://mail-api.scribase.com`) |
+| `RESEND_BASE_URL` | Accepted as a fallback for base URL |
+
+---
+
+## Output format
+
+All commands output newline-delimited JSON.  Pipe to `jq` for filtering:
+
+```bash
+scribase-mail emails list | jq '.data[].id'
+scribase-mail domains list | jq '.data[] | select(.status == "verified") | .name'
+```
+
+Errors are written to `stderr` with a non-zero exit code.
