@@ -153,6 +153,10 @@ services:
       DODO_PRODUCT_ID_SCALE: ${DODO_PRODUCT_ID_SCALE:-}
       DODO_USAGE_METER_ID: ${DODO_USAGE_METER_ID:-}
       DODO_USAGE_EVENT_NAME: ${DODO_USAGE_EVENT_NAME:-email.sent}
+      # Inbound MX: the mx service calls /api/internal/inbound* with this
+      # shared secret; without it those routes fail closed (503).
+      INBOUND_INTERNAL_SECRET: ${INBOUND_INTERNAL_SECRET:-}
+      INBOUND_MX_HOSTNAME: ${INBOUND_MX_HOSTNAME:-inbound.scribase.com}
     volumes:
       - ${OCI_PRIVATE_KEY_FILE:?set OCI_PRIVATE_KEY_FILE}:/run/secrets/oci_api_key.pem:ro
     healthcheck:
