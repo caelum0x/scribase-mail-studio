@@ -20,6 +20,10 @@ import { logger } from "../logger/log";
 import { LimitService } from "./limit-service";
 import { UnsendApiError } from "../public-api/api-error";
 import { toResendPayload } from "./webhook-resend-payload";
+import {
+  assertPublicWebhookUrl,
+  WebhookUrlError,
+} from "../utils/webhook-url-guard";
 
 /** How long (ms) a previous secret remains valid after rotation. */
 const PREVIOUS_SECRET_TTL_MS = 24 * 60 * 60 * 1000;
@@ -297,6 +301,17 @@ export class WebhookService {
     return webhook;
   }
 
+  private static async assertSafeUrl(url: string) {
+    try {
+      await assertPublicWebhookUrl(url);
+    } catch (error) {
+      if (error instanceof WebhookUrlError) {
+        throw new UnsendApiError({ code: "BAD_REQUEST", message: error.message });
+      }
+      throw error;
+    }
+  }
+
   public static async createWebhook(params: {
     teamId: number;
     userId: number;
@@ -317,6 +332,8 @@ export class WebhookService {
         message: reason ?? "Webhook limit reached",
       });
     }
+
+    await WebhookService.assertSafeUrl(params.url);
 
     const normalizedDomainIds = WebhookService.normalizeDomainIds(
       params.domainIds,
@@ -345,7 +362,7 @@ export class WebhookService {
         secret,
         eventTypes: params.eventTypes,
         status: WebhookStatus.ACTIVE,
-        createdByUserId: params.userId,
+        createdByUserId: params.userId > 0 ? params.userId : null,
         signatureFormat: format,
       },
     });
@@ -370,6 +387,10 @@ export class WebhookService {
         code: "NOT_FOUND",
         message: "Webhook not found",
       });
+    }
+
+    if (params.url !== undefined) {
+      await WebhookService.assertSafeUrl(params.url);
     }
 
     const secret =
@@ -933,6 +954,9 @@ async function postWebhook(params: {
       "X-UseSend-Retry": (usesendBody.attempt ?? 0) > 1 ? "true" : "false",
     };
   }
+
+  // Re-check at send time: DNS can change after the webhook was saved.
+  await assertPublicWebhookUrl(params.url);
 
   const start = Date.now();
 

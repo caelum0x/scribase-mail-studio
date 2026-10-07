@@ -67,6 +67,11 @@ vi.mock("~/server/logger/log", () => ({
   logger: mockLogger,
 }));
 
+vi.mock("~/server/utils/webhook-url-guard", () => ({
+  assertPublicWebhookUrl: vi.fn().mockResolvedValue(undefined),
+  WebhookUrlError: class WebhookUrlError extends Error {},
+}));
+
 vi.mock("~/server/service/limit-service", () => ({
   LimitService: mockLimitService,
 }));

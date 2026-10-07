@@ -157,6 +157,9 @@ services:
       # shared secret; without it those routes fail closed (503).
       INBOUND_INTERNAL_SECRET: ${INBOUND_INTERNAL_SECRET:-}
       INBOUND_MX_HOSTNAME: ${INBOUND_MX_HOSTNAME:-inbound.scribase.com}
+      # Webhook URLs must resolve to public IPs (SSRF guard). Comma-separated
+      # internal hostnames listed here are exempt; keep empty in production.
+      WEBHOOK_ALLOWED_PRIVATE_HOSTS: ${WEBHOOK_ALLOWED_PRIVATE_HOSTS:-}
     volumes:
       - ${OCI_PRIVATE_KEY_FILE:?set OCI_PRIVATE_KEY_FILE}:/run/secrets/oci_api_key.pem:ro
     healthcheck:
