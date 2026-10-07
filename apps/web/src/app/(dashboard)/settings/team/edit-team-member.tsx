@@ -34,7 +34,7 @@ import {
 } from "@usesend/ui/src/select";
 
 const teamUserSchema = z.object({
-  role: z.enum(["MEMBER", "ADMIN"]),
+  role: z.enum(["MEMBER", "DEVELOPER", "ADMIN"]),
 });
 
 export const EditTeamMember: React.FC<{
@@ -108,6 +108,7 @@ export const EditTeamMember: React.FC<{
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="MEMBER">Member</SelectItem>
+                        <SelectItem value="DEVELOPER">Developer</SelectItem>
                         <SelectItem value="ADMIN">Admin</SelectItem>
                       </SelectContent>
                     </Select>

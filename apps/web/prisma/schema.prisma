@@ -77,10 +77,12 @@ model Account {
 }
 
 model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
+  id           String    @id @default(cuid())
+  sessionToken String    @unique
   userId       Int
   expires      DateTime
+  /// Set when the user has completed a TOTP challenge in this session.
+  twoFactorVerifiedAt DateTime?
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -105,6 +107,13 @@ model User {
   sessions         Session[]
   teamUsers        TeamUser[]
   webhookEndpoints Webhook[]
+  // --- Wave 5: TOTP / MFA ---
+  /// Base32-encoded TOTP secret; null if not enrolled.
+  totpSecret          String?
+  /// Whether TOTP is fully enrolled and enforced for this user.
+  totpEnabled         Boolean  @default(false)
+  /// JSON array of bcrypt-hashed one-time recovery codes.
+  totpRecoveryCodes   Json?
 }
 
 enum Plan {
@@ -150,6 +159,11 @@ model Team {
   auditLogs         AuditLog[]
   receivedEmails    ReceivedEmail[]
   emailReviews      EmailReview[]
+  // --- Wave 5: security + dedicated IPs ---
+  /// When true, all team members must complete TOTP before accessing the dashboard.
+  requireTwoFactor  Boolean           @default(false)
+  /// OCI dedicated IP pool name / label (admin-only, manual OCI service request first).
+  sendingPool       String?
 }
 
 model TeamInvite {
@@ -198,6 +212,8 @@ model BillingWebhookEvent {
 enum Role {
   ADMIN
   MEMBER
+  /// Read-only developer role: can view emails, domains, analytics; cannot manage keys, team, billing.
+  DEVELOPER
 }
 
 model TeamUser {

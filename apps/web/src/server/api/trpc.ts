@@ -134,6 +134,34 @@ export const teamProcedure = protectedProcedure.use(async ({ ctx, next }) => {
     throw new TRPCError({ code: "NOT_FOUND", message: "Team not found" });
   }
 
+  // 2FA enforcement: if the team requires MFA and the user has TOTP enabled,
+  // verify that at least one of their active sessions has been 2FA-verified.
+  // DEVELOPER and MEMBER roles must also comply.
+  if (teamUser.team.requireTwoFactor) {
+    const user = await db.user.findUnique({
+      where: { id: ctx.session.user.id },
+      select: { totpEnabled: true },
+    });
+
+    if (user?.totpEnabled) {
+      const verifiedSession = await db.session.findFirst({
+        where: {
+          userId: ctx.session.user.id,
+          twoFactorVerifiedAt: { not: null },
+          expires: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+
+      if (!verifiedSession) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "MFA_REQUIRED",
+        });
+      }
+    }
+  }
+
   return withLogger(
     getChildLogger({
       teamId: teamUser.team.id,

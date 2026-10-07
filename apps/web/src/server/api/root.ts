@@ -17,6 +17,8 @@ import { waitlistRouter } from "./routers/waitlist";
 import { feedbackRouter } from "./routers/feedback";
 import { webhookRouter } from "./routers/webhook";
 import { receivedEmailRouter } from "./routers/received-email";
+import { mfaRouter } from "./routers/mfa";
+import { auditRouter } from "./routers/audit";
 
 /**
  * This is the primary router for your server.
@@ -42,6 +44,8 @@ export const appRouter = createTRPCRouter({
   feedback: feedbackRouter,
   webhook: webhookRouter,
   receivedEmail: receivedEmailRouter,
+  mfa: mfaRouter,
+  audit: auditRouter,
 });
 
 // export type definition of API

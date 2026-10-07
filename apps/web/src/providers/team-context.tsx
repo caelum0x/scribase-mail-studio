@@ -19,7 +19,7 @@ interface TeamContextType {
   currentTeam: Team | null;
   teams: Team[];
   isLoading: boolean;
-  currentRole: "ADMIN" | "MEMBER";
+  currentRole: "ADMIN" | "DEVELOPER" | "MEMBER";
   currentIsAdmin: boolean;
 }
 

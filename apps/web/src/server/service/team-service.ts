@@ -151,7 +151,7 @@ export class TeamService {
   static async createTeamInvite(
     teamId: number,
     email: string,
-    role: "MEMBER" | "ADMIN",
+    role: "MEMBER" | "ADMIN" | "DEVELOPER",
     teamName: string,
     sendEmail: boolean = true,
   ): Promise<TeamInvite> {
@@ -206,7 +206,7 @@ export class TeamService {
   static async updateTeamUserRole(
     teamId: number,
     userId: string,
-    role: "MEMBER" | "ADMIN",
+    role: "MEMBER" | "ADMIN" | "DEVELOPER",
   ) {
     const teamUser = await db.teamUser.findFirst({
       where: {

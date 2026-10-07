@@ -7,6 +7,8 @@ import {
   protectedProcedure,
   domainProcedure,
 } from "~/server/api/trpc";
+import { getDomainDeliverabilityInsights } from "~/server/service/deliverability-insights-service";
+import { recordAudit, userAuditCtx, AuditAction } from "~/server/service/audit-service";
 import { db } from "~/server/db";
 import {
   createDomain,
@@ -126,4 +128,25 @@ export const domainRouter = createTRPCRouter({
       });
     },
   ),
+
+  /** Per-domain deliverability health checks (DMARC, SPF, DKIM, bounce/complaint rates). */
+  getDeliverabilityInsights: domainProcedure.query(async ({ ctx, input }) => {
+    return getDomainDeliverabilityInsights(ctx.team.id, input.id);
+  }),
+
+  /** Update the custom return-path subdomain for this domain (admin). */
+  updateReturnPath: domainProcedure
+    .input(z.object({ customReturnPath: z.string().min(1).max(63).regex(/^[a-z0-9-]+$/).nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const updated = await db.domain.update({
+        where: { id: input.id, teamId: ctx.team.id },
+        data: { customReturnPath: input.customReturnPath },
+      });
+      await recordAudit(
+        userAuditCtx(ctx.team.id, ctx.session.user.id),
+        AuditAction.DOMAIN_ADDED,
+        { targetType: "domain", targetId: input.id, metadata: { customReturnPath: input.customReturnPath } },
+      );
+      return updated;
+    }),
 });

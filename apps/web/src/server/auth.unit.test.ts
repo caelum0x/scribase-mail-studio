@@ -102,6 +102,9 @@ const newUser = {
   isBetaUser: false,
   isWaitlisted: false,
   isAdmin: false,
+  totpSecret: null,
+  totpEnabled: false,
+  totpRecoveryCodes: null,
 };
 
 const newUserWithoutEmail = {
