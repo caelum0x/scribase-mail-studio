@@ -12,3 +12,22 @@ mail.scribase.com {
 		header_up X-Forwarded-For {client_ip}
 	}
 }
+
+# mail-api.scribase.com -> Resend-compatible API (same container, :4350).
+# The official Resend SDKs call /emails, /domains, ... at the root of their
+# base URL, so every path is prefixed with /api/resend (query string kept):
+#   GET /emails/abc?x=1  ->  /api/resend/emails/abc?x=1
+# Nothing else of the app (dashboard, /api/v1, auth) is reachable on this host.
+# Single-level subdomain on purpose: Cloudflare Universal SSL and the
+# "*.scribase.com" Origin CA cert do not cover mail-api.scribase.com.
+mail-api.scribase.com {
+	import common scribase-mail-api
+	tls /etc/caddy/certs/scribase-origin.pem /etc/caddy/certs/scribase-origin.key
+	request_body {
+		max_size 45MB
+	}
+	rewrite * /api/resend{uri}
+	reverse_proxy 127.0.0.1:4350 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}

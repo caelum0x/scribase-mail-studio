@@ -16,10 +16,10 @@ import { handleResendError, ResendApiError } from "./errors";
  * Resend-compatible API.
  *
  * Served at `/api/resend/*` and, in production, as the root of its own host
- * (`https://api.mail.scribase.com/*`, Caddy rewrites to `/api/resend/*`).
+ * (`https://mail-api.scribase.com/*`, Caddy rewrites to `/api/resend/*`).
  * The official Resend SDKs work by changing only the base URL:
  *
- *   new Resend(key, { baseUrl: "https://api.mail.scribase.com" })
+ *   new Resend(key, { baseUrl: "https://mail-api.scribase.com" })
  *   new Resend(key, { baseUrl: "https://mail.scribase.com/api/resend" })
  *
  * Auth, API key permission policy and the per-team rate limit are shared with

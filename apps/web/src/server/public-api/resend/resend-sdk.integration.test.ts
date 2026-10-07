@@ -59,7 +59,7 @@ describeIntegration("resend SDK against the compat API (Postgres + Redis)", () =
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       const url = new URL(request.url);
-      // Same rewrite Caddy performs for api.mail.scribase.com.
+      // Same rewrite Caddy performs for mail-api.scribase.com.
       const rewritten = new URL(`/api/resend${url.pathname}${url.search}`, "http://localhost");
       return app.fetch(new Request(rewritten, request));
     }) as typeof fetch;

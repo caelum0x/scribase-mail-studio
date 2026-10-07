@@ -33,6 +33,10 @@ the box, and check disk first (the image build needs about 3 GB free).
   Users in the Administrators group need nothing extra. Without these,
   sending still works and bounces/complaints fall back to the 5-minute suppression-list poll, but
   there are no "delivered" events.
+- DNS for the Resend-compatible API host: `mail-api.scribase.com` CNAME/A to the
+  box (orange cloud, same as `mail.scribase.com`). It must stay a single-level
+  subdomain: Cloudflare Universal SSL and the `*.scribase.com` Origin CA cert do
+  not cover `api.mail.scribase.com`.
 - `FROM_EMAIL` must be on a domain that is ACTIVE in OCI Email Delivery.
   `scribase.com` is already an OCI email domain; use
   `Scribase Mail <noreply@scribase.com>` or add `mail.scribase.com` in OCI first.
@@ -103,6 +107,22 @@ ssh box 'sudo /opt/infra-box/install.sh caddy'
 curl -fsS https://mail.scribase.com/api/health
 ```
 
+`scribase-mail.caddy` holds two site blocks, so the one `CADDY_SITES` entry
+also serves the Resend-compatible API host:
+
+| Host | Serves |
+|---|---|
+| `mail.scribase.com` | dashboard, native API `/api/v1/*`, Resend API at `/api/resend/*` |
+| `mail-api.scribase.com` | Resend API only: Caddy runs `rewrite * /api/resend{uri}`, so `/emails?limit=2` reaches `/api/resend/emails?limit=2` and nothing else of the app is exposed |
+
+Checked with `infra-box/caddy/test/validate.sh` and a caddy:2 container (query
+strings preserved).
+
+```sh
+# expect 401 {"statusCode":401,"name":"missing_api_key",...}
+curl -sS https://mail-api.scribase.com/emails
+```
+
 ## 6. Smoke test
 
 1. Open `https://mail.scribase.com/login`, sign in with `ADMIN_EMAIL` (one-time
@@ -137,6 +157,27 @@ docker logs scribase-mail-web 2>&1 | grep -E "DeliveryLogPollJob|OciDeliveryLogs
    IAM policy above is missing (retried every 30 minutes). If a domain's logs
    were already enabled from the Console into another log group in the same
    compartment, that is fine: the search covers the whole compartment.
+
+6. Resend SDK compatibility. Point the official SDK at the API host; only the
+   base URL changes (API keys are Scribase Mail `us_...` keys):
+
+```sh
+# Node: RESEND_BASE_URL or the baseUrl option
+RESEND_BASE_URL=https://mail-api.scribase.com RESEND_API_KEY=$KEY node -e '
+  const { Resend } = require("resend");
+  new Resend().emails.send({ from: "hello@<domain>", to: "<you>", subject: "SDK test",
+    html: "<p>ok</p>", scheduledAt: "in 2 min" }).then(console.log)'
+# Python: RESEND_API_URL=https://mail-api.scribase.com
+```
+
+   The path-prefix form `https://mail.scribase.com/api/resend` works too (the
+   SDK concatenates base URL and path). Implemented so far: `POST /emails`,
+   `GET /emails/{id}`, `GET /emails` (cursor pagination). Fields not yet
+   supported (`attachments[].path`, `content_id`, `content_type`, `topic_id`)
+   return a 422 with a clear message instead of being dropped. API keys with
+   "Sending access" can only call `POST /emails` and `POST /emails/batch`
+   (Resend semantics) on both APIs. Default rate limit is 10 req/s per team
+   (Admin > Teams to change it per team), shared by both APIs.
 
 ## 7. Backups
 
