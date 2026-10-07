@@ -214,9 +214,8 @@ describe("Resend send-email schema", () => {
     [{ react: "<Email />" }, /react/],
     [{ topic_id: "t" }, /topic_id/],
     [{ to: Array.from({ length: 51 }, (_, i) => `u${i}@example.com`) }, /maximum of 50/],
-    [{ attachments: [{ filename: "a", path: "https://x/y" }] }, /path/],
-    [{ attachments: [{ filename: "a", content: "aGk=", content_id: "c" }] }, /content_id/],
-    [{ attachments: [{ filename: "a", content: "aGk=", content_type: "text/plain" }] }, /content_type/],
+    // path: http:// (not https) is rejected immediately — no DNS call needed.
+    [{ attachments: [{ path: "http://example.com/file.pdf" }] }, /https/],
     [{ attachments: [{ filename: "a", content: "not base64!" }] }, /base64/],
     [{ template: { id: "t" } }, /cannot be combined/],
     [{ subject: undefined }, /subject/],
@@ -224,6 +223,19 @@ describe("Resend send-email schema", () => {
   ])("rejects %j", async (override, message) => {
     const input = resendSendEmailSchema.parse({ ...base, ...override });
     await expect(toEmailContent(input, resolve, now)).rejects.toThrow(message);
+  });
+
+  it("accepts content_id and content_type on attachments", async () => {
+    const input = resendSendEmailSchema.parse({
+      ...base,
+      html: '<img src="cid:logo">',
+      text: undefined,
+      attachments: [{ filename: "logo.png", content: "aGk=", content_id: "logo", content_type: "image/png" }],
+    });
+    const content = await toEmailContent(input, resolve, now);
+    expect(content.attachments).toEqual([
+      { filename: "logo.png", content: "aGk=", cid: "logo", contentType: "image/png" },
+    ]);
   });
 });
 

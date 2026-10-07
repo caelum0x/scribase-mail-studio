@@ -25,6 +25,7 @@ const { mockGetTeamFromToken, mockRedis, mockDb, mockQueueEmail, mockSuppression
       apiKey: { findUnique: vi.fn() },
       domain: { findFirst: vi.fn() },
       template: { findFirst: vi.fn() },
+      topic: { findFirst: vi.fn() },
       email: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
       emailEvent: { create: vi.fn() },
     },
@@ -110,6 +111,7 @@ describe("official resend SDK against the compat API", () => {
     mockRedis.del.mockResolvedValue(1);
     mockDb.apiKey.findUnique.mockResolvedValue({ id: 11, teamId: 1, domainId: null, domain: null });
     mockDb.domain.findFirst.mockResolvedValue(DOMAIN);
+    mockDb.topic.findFirst.mockResolvedValue(null);
     mockSuppression.mockImplementation(async (emails: string[]) =>
       Object.fromEntries(emails.map((e) => [e, false])),
     );
@@ -250,7 +252,8 @@ describe("official resend SDK against the compat API", () => {
     expect(data?.id).toBe("em_1");
   });
 
-  it("rejects unsupported fields explicitly instead of dropping them", async () => {
+  it("rejects unknown topic_id with not_found and accepts inline CID attachments", async () => {
+    // topic_id is now supported; unknown topic → 404 not_found.
     const { data, error } = await client().emails.send({
       from: "hello@acme.dev",
       to: "user@example.com",
@@ -260,11 +263,12 @@ describe("official resend SDK against the compat API", () => {
     });
     expect(data).toBeNull();
     expect(error).toMatchObject({
-      statusCode: 422,
-      name: "validation_error",
-      message: "`topic_id` is not supported yet.",
+      statusCode: 404,
+      name: "not_found",
+      message: "Topic 'topic_1' not found.",
     });
 
+    // content_id (CID) attachments are now supported.
     const inline = await client().emails.send({
       from: "hello@acme.dev",
       to: "user@example.com",
@@ -272,8 +276,12 @@ describe("official resend SDK against the compat API", () => {
       html: '<img src="cid:logo">',
       attachments: [{ filename: "logo.png", content: "aGVsbG8=", contentId: "logo" }],
     });
-    expect(inline.error).toMatchObject({ statusCode: 422, name: "invalid_attachment" });
-    expect(mockDb.email.create).not.toHaveBeenCalled();
+    expect(inline.error).toBeNull();
+    expect(inline.data?.id).toBe("em_1");
+    const created = mockDb.email.create.mock.calls[0]![0].data;
+    expect(JSON.parse(created.attachments)).toEqual([
+      { filename: "logo.png", content: "aGVsbG8=", cid: "logo" },
+    ]);
   });
 
   it("returns missing_required_field in the Resend error shape", async () => {

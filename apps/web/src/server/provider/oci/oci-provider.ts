@@ -197,7 +197,11 @@ export class OciEmailProvider implements EmailProvider {
         attachments: input.attachments?.map((attachment) => ({
           filename: attachment.filename,
           content: attachment.content,
-          encoding: "base64",
+          encoding: "base64" as const,
+          ...(attachment.cid !== undefined ? { cid: attachment.cid } : {}),
+          ...(attachment.contentType !== undefined
+            ? { contentType: attachment.contentType }
+            : {}),
         })),
       });
     } catch (error) {

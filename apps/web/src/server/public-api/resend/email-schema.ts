@@ -1,6 +1,11 @@
+import dns from "node:dns/promises";
+import https from "node:https";
+import { Readable } from "node:stream";
+import type * as dnsTypes from "node:dns";
 import * as chrono from "chrono-node";
+import { convert as htmlToText } from "html-to-text";
 import { z } from "zod";
-import type { EmailContent, EmailTag } from "~/types";
+import type { EmailAttachment, EmailContent, EmailTag } from "~/types";
 import { ResendApiError } from "./errors";
 
 /**
@@ -13,6 +18,8 @@ export const MAX_TO_RECIPIENTS = 50;
 export const MAX_SCHEDULE_DAYS = 30;
 /** Resend's limit: 40 MB per email after base64 encoding. */
 export const MAX_ATTACHMENTS_BYTES = 40 * 1024 * 1024;
+/** Fetch timeout for path attachments. */
+const ATTACHMENT_FETCH_TIMEOUT_MS = 15_000;
 
 const TAG_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/\r\n]*={0,2}[\r\n]*$/;
@@ -120,35 +127,222 @@ export function parseResendScheduledAt(value: string, now = new Date()): Date {
   return parsed;
 }
 
-function toAttachments(
+// ---------------------------------------------------------------------------
+// SSRF guard for path attachments
+// ---------------------------------------------------------------------------
+
+/** Returns true for IPs that must not be fetched server-side. */
+export function isPrivateIp(ip: string): boolean {
+  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const parts = v4.map(Number);
+    const a = parts[1] ?? 0;
+    const b = parts[2] ?? 0;
+    return (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224 // multicast, reserved, broadcast
+    );
+  }
+  const norm = ip.toLowerCase().replace(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/, "$1");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(norm)) return isPrivateIp(norm);
+  return (
+    norm === "::1" ||
+    norm === "::" ||
+    norm.startsWith("fe80:") ||
+    norm.startsWith("fc") ||
+    norm.startsWith("fd")
+  );
+}
+
+export async function fetchAttachmentFromPath(
+  url: string,
+  index: number,
+): Promise<{ content: string; contentType: string | undefined }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ResendApiError(
+      "invalid_attachment",
+      `attachments[${index}].path is not a valid URL.`,
+    );
+  }
+  if (parsed.protocol !== "https:") {
+    throw new ResendApiError(
+      "invalid_attachment",
+      `attachments[${index}].path must use https://.`,
+    );
+  }
+
+  // Resolve, validate and connect to the same address (no DNS rebinding),
+  // and never follow redirects (a public URL could point at a private one).
+  const response = await safeHttpsGet(parsed, index);
+  try {
+    if (response.status >= 300 && response.status < 400) {
+      throw new ResendApiError(
+        "invalid_attachment",
+        `attachments[${index}].path redirects; use the final URL.`,
+      );
+    }
+    if (!response.ok) {
+      throw new ResendApiError(
+        "invalid_attachment",
+        `attachments[${index}].path fetch returned HTTP ${response.status}.`,
+      );
+    }
+
+    const contentType =
+      response.headers.get("content-type") ?? undefined;
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new ResendApiError(
+        "invalid_attachment",
+        `attachments[${index}].path returned an empty body.`,
+      );
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.length;
+      if (totalBytes > MAX_ATTACHMENTS_BYTES) {
+        await reader.cancel();
+        throw new ResendApiError(
+          "invalid_attachment",
+          `attachments[${index}].path exceeds the 40 MB size cap.`,
+        );
+      }
+      chunks.push(value);
+    }
+
+    const content = Buffer.concat(chunks).toString("base64");
+    return { content, contentType };
+  } finally {
+    response.close();
+  }
+}
+
+type SafeResponse = {
+  status: number;
+  ok: boolean;
+  headers: { get(name: string): string | null };
+  body: { getReader(): ReadableStreamDefaultReader<Uint8Array> } | null;
+  close(): void;
+};
+
+/** Validating DNS lookup: refuses hostnames that resolve to private IPs. */
+function guardedLookup(
+  hostname: string,
+  options: dnsTypes.LookupOptions,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | dnsTypes.LookupAddress[],
+    family?: number,
+  ) => void,
+) {
+  dns.lookup(hostname, { ...options, all: true }).then(
+    (addresses) => {
+      const blocked = addresses.find((a) => isPrivateIp(a.address));
+      if (blocked || addresses.length === 0) {
+        callback(
+          Object.assign(new Error("Resolves to a private address"), {
+            code: "EPRIVATEADDR",
+          }),
+          "",
+        );
+        return;
+      }
+      if (options.all) callback(null, addresses);
+      else callback(null, addresses[0]!.address, addresses[0]!.family);
+    },
+    (err: NodeJS.ErrnoException) => callback(err, ""),
+  );
+}
+
+function safeHttpsGet(url: URL, index: number): Promise<SafeResponse> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { lookup: guardedLookup, timeout: ATTACHMENT_FETCH_TIMEOUT_MS },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        resolve({
+          status,
+          ok: status >= 200 && status < 300,
+          headers: {
+            get: (name) => {
+              const v = res.headers[name.toLowerCase()];
+              return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+            },
+          },
+          body: {
+            getReader: () =>
+              (Readable.toWeb(res) as ReadableStream<Uint8Array>).getReader(),
+          },
+          close: () => res.destroy(),
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", (err: NodeJS.ErrnoException) => {
+      reject(
+        new ResendApiError(
+          "invalid_attachment",
+          err.code === "EPRIVATEADDR"
+            ? `attachments[${index}].path resolves to a private or reserved IP address.`
+            : `attachments[${index}].path could not be fetched.`,
+        ),
+      );
+    });
+  });
+}
+
+async function toAttachments(
   attachments: ResendSendEmailInput["attachments"],
-): EmailContent["attachments"] {
+): Promise<EmailAttachment[] | undefined> {
   if (!attachments || attachments.length === 0) return undefined;
 
   let totalBytes = 0;
-  const mapped = attachments.map((attachment, index) => {
+  const results: EmailAttachment[] = [];
+
+  for (let index = 0; index < attachments.length; index++) {
+    const attachment = attachments[index]!;
+
     if (attachment.path !== undefined) {
-      throw new ResendApiError(
-        "invalid_attachment",
-        `attachments[${index}].path is not supported yet; send the file as base64 \`content\`.`,
+      // Path attachment: fetch server-side with SSRF guard.
+      const { content, contentType } = await fetchAttachmentFromPath(
+        attachment.path,
+        index,
       );
+      const filename =
+        attachment.filename ??
+        attachment.path.split("/").pop() ??
+        `attachment_${index}`;
+      totalBytes += content.length;
+      results.push({
+        filename,
+        content,
+        ...(attachment.content_type ?? contentType
+          ? { contentType: attachment.content_type ?? contentType }
+          : {}),
+        ...(attachment.content_id ? { cid: attachment.content_id } : {}),
+      });
+      continue;
     }
-    if (attachment.content_id !== undefined) {
-      throw new ResendApiError(
-        "invalid_attachment",
-        `attachments[${index}].content_id (inline images) is not supported yet.`,
-      );
-    }
-    if (attachment.content_type !== undefined) {
-      throw new ResendApiError(
-        "invalid_attachment",
-        `attachments[${index}].content_type is not supported yet; the type is derived from the filename.`,
-      );
-    }
+
     if (attachment.content === undefined || attachment.content === "") {
       throw new ResendApiError(
         "invalid_attachment",
-        `attachments[${index}] must include \`content\`.`,
+        `attachments[${index}] must include \`content\` or \`path\`.`,
       );
     }
     if (!attachment.filename) {
@@ -171,8 +365,15 @@ function toAttachments(
     }
     totalBytes += content.length;
 
-    return { filename: attachment.filename, content };
-  });
+    results.push({
+      filename: attachment.filename,
+      content,
+      ...(attachment.content_type
+        ? { contentType: attachment.content_type }
+        : {}),
+      ...(attachment.content_id ? { cid: attachment.content_id } : {}),
+    });
+  }
 
   if (totalBytes > MAX_ATTACHMENTS_BYTES) {
     throw new ResendApiError(
@@ -180,7 +381,7 @@ function toAttachments(
       "Attachments exceed the 40 MB limit per email.",
     );
   }
-  return mapped;
+  return results;
 }
 
 function toVariables(
@@ -196,19 +397,31 @@ function toVariables(
  * Validate Resend-only rules and map to the camelCase EmailContent used by
  * the existing send pipeline. `resolveTemplateId` maps an id or alias to a
  * template id owned by the team.
+ *
+ * `filterTopicRecipients` is called when `topic_id` is set; it removes
+ * recipients opted out of the topic and returns the filtered arrays. Pass
+ * `undefined` to reject `topic_id` with a "not supported" error.
  */
 export async function toEmailContent(
   input: ResendSendEmailInput,
   resolveTemplateId: (idOrAlias: string) => Promise<string>,
-  now = new Date(),
-): Promise<EmailContent> {
+  now?: Date,
+  filterTopicRecipients?: (opts: {
+    topicId: string;
+    to: string[];
+    cc: string[];
+    bcc: string[];
+  }) => Promise<{ to: string[]; cc: string[]; bcc: string[] }>,
+): Promise<EmailContent & { topicId?: string }> {
+  const nowDate = now ?? new Date();
+
   if (input.react !== undefined) {
     throw new ResendApiError(
       "validation_error",
       "`react` must be rendered to HTML before sending. The Resend SDK does this automatically when @react-email/render is installed.",
     );
   }
-  if (input.topic_id !== undefined) {
+  if (input.topic_id !== undefined && filterTopicRecipients === undefined) {
     throw new ResendApiError(
       "validation_error",
       "`topic_id` is not supported yet.",
@@ -250,21 +463,45 @@ export async function toEmailContent(
     value: tag.value,
   }));
 
+  // Auto-generate plain text from HTML when text is absent.
+  const text =
+    input.text ??
+    (input.html ? htmlToText(input.html, { wordwrap: 100 }) : undefined);
+
+  let finalTo = to;
+  let finalCc = toArray(input.cc);
+  let finalBcc = toArray(input.bcc);
+
+  if (input.topic_id && filterTopicRecipients) {
+    const filtered = await filterTopicRecipients({
+      topicId: input.topic_id,
+      to: finalTo,
+      cc: finalCc,
+      bcc: finalBcc,
+    });
+    finalTo = filtered.to;
+    finalCc = filtered.cc;
+    finalBcc = filtered.bcc;
+  }
+
   return {
     from: input.from,
-    to,
+    to: finalTo,
     subject: input.subject,
-    ...(input.cc !== undefined ? { cc: toArray(input.cc) } : {}),
-    ...(input.bcc !== undefined ? { bcc: toArray(input.bcc) } : {}),
+    ...(finalCc.length > 0 ? { cc: finalCc } : {}),
+    ...(finalBcc.length > 0 ? { bcc: finalBcc } : {}),
     ...(input.reply_to !== undefined ? { replyTo: toArray(input.reply_to) } : {}),
     ...(input.html ? { html: input.html } : {}),
-    ...(input.text ? { text: input.text } : {}),
+    ...(text ? { text } : {}),
     ...(input.headers ? { headers: input.headers } : {}),
     ...(input.scheduled_at
-      ? { scheduledAt: parseResendScheduledAt(input.scheduled_at, now).toISOString() }
+      ? { scheduledAt: parseResendScheduledAt(input.scheduled_at, nowDate).toISOString() }
       : {}),
-    ...(input.attachments ? { attachments: toAttachments(input.attachments) } : {}),
+    ...(input.attachments
+      ? { attachments: await toAttachments(input.attachments) }
+      : {}),
     ...(tags && tags.length > 0 ? { tags } : {}),
+    ...(input.topic_id ? { topicId: input.topic_id } : {}),
     ...(input.template
       ? {
           templateId: await resolveTemplateId(input.template.id),
