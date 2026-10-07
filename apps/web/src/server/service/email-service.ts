@@ -189,11 +189,19 @@ export async function sendEmail(
   }
 
   if (templateId) {
-    const template = await db.template.findUnique({
-      where: { id: templateId },
+    const template = await db.template.findFirst({
+      where: { id: templateId, teamId },
     });
 
-    if (template) {
+    if (!template) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Template not found",
+      });
+    }
+
+    // Template exists and belongs to this team: render subject + html.
+    {
       const jsonContent = JSON.parse(template.content || "{}");
       const renderer = new EmailRenderer(jsonContent);
 
@@ -499,8 +507,8 @@ export async function sendBulkEmails(
 
     // Process template if specified
     if (templateId) {
-      const template = await db.template.findUnique({
-        where: { id: templateId },
+      const template = await db.template.findFirst({
+        where: { id: templateId, teamId },
       });
 
       if (template) {
@@ -612,7 +620,7 @@ export async function sendBulkEmails(
 
   // Cache templates to avoid repeated database queries
   const templateCache = new Map<
-    number,
+    string,
     { subject: string; content: any; renderer: EmailRenderer }
   >();
 
@@ -651,10 +659,10 @@ export async function sendBulkEmails(
 
       // Process template if specified
       if (templateId) {
-        let templateData = templateCache.get(Number(templateId));
+        let templateData = templateCache.get(`${teamId}:${templateId}`);
         if (!templateData) {
-          const template = await db.template.findUnique({
-            where: { id: templateId },
+          const template = await db.template.findFirst({
+            where: { id: templateId, teamId },
           });
           if (template) {
             const jsonContent = JSON.parse(template.content || "{}");
@@ -663,7 +671,7 @@ export async function sendBulkEmails(
               content: jsonContent,
               renderer: new EmailRenderer(jsonContent),
             };
-            templateCache.set(Number(templateId), templateData);
+            templateCache.set(`${teamId}:${templateId}`, templateData);
           }
         }
 
