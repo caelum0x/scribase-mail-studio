@@ -255,6 +255,67 @@ keeps the plan but applies Free limits until the payment is fixed;
 ends the plan at the end of the paid period. Warm-up caps for new teams still
 apply on every plan (the stricter limit wins).
 
+## Inbound MX (Wave 3 — receiving emails)
+
+Receiving email requires a separate `mx` Docker service and firewall changes.
+
+### DNS
+
+1. Add `inbound.scribase.com` → box public IP as a Cloudflare DNS record with
+   the **grey cloud** (DNS only, not proxied).  Cloudflare's proxy does not
+   forward raw SMTP.
+2. For each customer domain that has **Receiving** enabled, show them the MX
+   record that appears in Dashboard > Domains > DNS Records:
+   ```
+   MX  @  10 inbound.scribase.com.
+   ```
+
+### OCI firewall
+
+OCI Compute instances have a default security list that blocks inbound port 25.
+You must open it explicitly:
+
+1. OCI Console → Networking → Virtual Cloud Networks → your VCN →
+   Security Lists → your instance's security list → Add Ingress Rule:
+   - Source CIDR: `0.0.0.0/0`
+   - Protocol: TCP
+   - Destination port: 25
+2. Also check the instance's OS firewall (iptables/nftables):
+   ```sh
+   sudo iptables -I INPUT -p tcp --dport 25 -j ACCEPT
+   ```
+
+> **Note**: OCI blocks *outbound* port 25 from Compute instances but inbound
+> TCP port 25 is allowed once you add the security list rule.  This has been
+> documented in OCI docs but always verify against the current console.
+
+### Start the MX service
+
+```sh
+# Add to deploy/.env:
+INBOUND_ENABLED=true
+INBOUND_INTERNAL_SECRET=$(openssl rand -hex 32)
+INBOUND_MX_HOSTNAME=inbound.scribase.com
+# optional: INBOUND_SSL_KEY_PATH / INBOUND_SSL_CERT_PATH for STARTTLS
+
+cd /opt/scribase-mail
+docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env \
+  --profile mx build mx
+docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env \
+  --profile mx up -d mx
+docker compose ... logs -f mx
+# expect: "[inbound] MX server listening on port 25 (STARTTLS)"
+```
+
+Test from a remote machine:
+```sh
+# Check MX record resolves
+dig MX yourdomain.com
+# Send a test mail (Resend API or swaks)
+swaks --to test@yourdomain.com --from sender@example.com \
+      --server inbound.scribase.com --port 25
+```
+
 ## Rollback
 
 ```sh

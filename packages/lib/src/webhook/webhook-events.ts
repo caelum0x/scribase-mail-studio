@@ -29,6 +29,7 @@ export const EmailEvents = [
   "email.suppressed",
   "email.opened",
   "email.clicked",
+  "email.received",
 ] as const;
 
 export type EmailWebhookEventType = (typeof EmailEvents)[number];
@@ -160,6 +161,23 @@ export type WebhookTestPayload = {
   sentAt: string;
 };
 
+/** Fired when an inbound email arrives on a receiving-enabled domain. */
+export type ReceivedEmailPayload = {
+  id: string;
+  from: string;
+  to: string[];
+  cc?: string[];
+  subject: string;
+  domainId?: number | null;
+  /** OCI Object Storage key (or local path) of the raw .eml file, if stored. */
+  rawStorageKey?: string | null;
+  spfResult?: string | null;
+  dkimResult?: string | null;
+  dmarcResult?: string | null;
+  sizeBytes: number;
+  createdAt: string;
+};
+
 export type EmailEventPayloadMap = {
   "email.queued": EmailBasePayload;
   "email.sent": EmailBasePayload;
@@ -174,6 +192,7 @@ export type EmailEventPayloadMap = {
   "email.suppressed": EmailSuppressedPayload;
   "email.opened": EmailOpenedPayload;
   "email.clicked": EmailClickedPayload;
+  "email.received": ReceivedEmailPayload;
 };
 
 export type DomainEventPayloadMap = {

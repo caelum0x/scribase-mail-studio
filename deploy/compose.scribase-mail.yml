@@ -1,8 +1,21 @@
-# Scribase Mail: web + Postgres + Redis on one host.
+# Scribase Mail: web + Postgres + Redis + MX server on one host.
 #
-# Memory budget (hard limits): web 896 MB + postgres 448 MB + redis 128 MB = 1472 MB.
+# Memory budget (hard limits): web 896 MB + postgres 448 MB + redis 128 MB + mx 128 MB = 1600 MB.
 # Data lives in local bind mounts under ${SCRIBASE_MAIL_DATA_DIR:-./data}.
 # The web app binds 127.0.0.1 only; the host's Caddy terminates TLS.
+#
+# Inbound MX (Wave 3):
+#   - The `mx` service listens on port 25 (bind-mounted to host 0.0.0.0:25).
+#   - OCI Security List: ensure inbound TCP 25 is open on the instance.
+#     Oracle blocks OUTBOUND port 25 from Compute instances but INBOUND port 25
+#     is allowed; verify by checking VCN security list ingress rules in the OCI Console.
+#     (Note: this has not been confirmed live — mark as "to-check" if unsure.)
+#   - DNS: Add an MX record for each receiving domain pointing to this host
+#     (e.g. "@ 10 inbound.scribase.com.").  inbound.scribase.com must resolve
+#     to the box's public IP; set it in Cloudflare with orange cloud OFF (grey
+#     cloud) so the real IP is returned.
+#   - TLS for STARTTLS: set INBOUND_SSL_KEY_PATH and INBOUND_SSL_CERT_PATH to
+#     the same cert used by the web app (e.g. /etc/scribase-mail/scribase-origin.pem).
 #
 # Usage (from the repository root on the server):
 #   docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env build
@@ -153,6 +166,52 @@ services:
       retries: 5
       start_period: 60s
     mem_limit: 896m
+    networks: [internal]
+
+  # ─── Inbound MX server (Wave 3) ───────────────────────────────────────────
+  # Optional: start only when INBOUND_ENABLED=true in deploy/.env.
+  # To enable: uncomment the `profiles` line below, set INBOUND_ENABLED=true
+  # in deploy/.env, and run `docker compose ... --profile mx up -d`.
+  mx:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mx
+    image: scribase-mail-mx:${GIT_SHA:-latest}
+    container_name: scribase-mail-mx
+    restart: unless-stopped
+    profiles: [mx]
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:25:25"
+    environment:
+      INBOUND_ENABLED: "true"
+      INBOUND_PORT: "25"
+      SCRIBASE_MAIL_BASE_URL: http://web:3000
+      INBOUND_INTERNAL_SECRET: ${INBOUND_INTERNAL_SECRET:?set INBOUND_INTERNAL_SECRET}
+      INBOUND_MAX_SIZE_BYTES: ${INBOUND_MAX_SIZE_BYTES:-26214400}
+      INBOUND_MX_HOSTNAME: ${INBOUND_MX_HOSTNAME:-inbound.scribase.com}
+      # OCI Object Storage (optional: falls back to local disk if unset)
+      OCI_STORAGE_NAMESPACE: ${OCI_STORAGE_NAMESPACE:-}
+      OCI_STORAGE_BUCKET: ${OCI_STORAGE_BUCKET:-}
+      OCI_REGION: ${OCI_REGION:-eu-frankfurt-1}
+      OCI_TENANCY: ${OCI_TENANCY:-}
+      OCI_USER: ${OCI_USER:-}
+      OCI_FINGERPRINT: ${OCI_FINGERPRINT:-}
+      OCI_PRIVATE_KEY_PATH: /run/secrets/oci_api_key.pem
+      # TLS for STARTTLS on port 25
+      INBOUND_SSL_KEY_PATH: ${INBOUND_SSL_KEY_PATH:-}
+      INBOUND_SSL_CERT_PATH: ${INBOUND_SSL_CERT_PATH:-}
+      # Optional: ClamAV host for virus scanning (blank = disabled)
+      CLAMD_HOST: ${CLAMD_HOST:-}
+      CLAMD_PORT: ${CLAMD_PORT:-3310}
+      # Optional: local disk fallback for raw EML storage (dev only)
+      INBOUND_STORAGE_DIR: /var/scribase-inbound
+    volumes:
+      - ${OCI_PRIVATE_KEY_FILE:?set OCI_PRIVATE_KEY_FILE}:/run/secrets/oci_api_key.pem:ro
+      - ${SCRIBASE_MAIL_DATA_DIR:-./data}/inbound:/var/scribase-inbound
+    mem_limit: 128m
     networks: [internal]
 
 networks:
