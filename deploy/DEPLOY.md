@@ -205,6 +205,16 @@ emails on Pro and Scale).
 
 Do everything in **test mode** first, then repeat in live mode.
 
+**Production state (2026-10-08, created via the Dodo API in live mode on the
+shared business):** meter `mtr_0NpFcOMHHeIraqL8p95ok` (event
+`scribase_mail.email.sent`, sum over `emails`), Pro `pdt_0NpFcORN2iMOkMVRw7VBG`,
+Scale `pdt_0NpFcOUMth7PWNLxeoKTA` (usage-based price: fixed $20 / $90 monthly,
+meter at `price_per_unit` `"0.09"` = 0.09 cents per email, free threshold
+50,000 / 100,000), webhook `ep_3KNwODDOloA51pjBbf2ZX2Buiu9`. The event name is
+namespaced because Dodo meters are business-wide and other products share the
+business; set `DODO_USAGE_EVENT_NAME` to match. Over the API,
+`price_per_unit` is in the lowest denomination (cents), not dollars.
+
 1. **Meter** (Dashboard > Products > Meters > Create):
    name `Emails sent`, event name `email.sent`, aggregation **Sum** over
    metadata key `emails`, unit `emails`. Copy the id (`mtr_...`).
