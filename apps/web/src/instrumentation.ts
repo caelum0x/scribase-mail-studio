@@ -36,6 +36,9 @@ export async function register() {
         await import("~/server/jobs/provider-delivery-log-poll-job");
       await initProviderDeliveryLogPollJob();
 
+      // Deletes API request logs older than API_LOG_RETENTION_DAYS (schedules on import).
+      await import("~/server/jobs/api-log-cleanup-job");
+
       // Shared-tenancy abuse control; only multi-tenant (cloud) installs need it.
       if (isCloud()) {
         const { initReputationGuardJob } =

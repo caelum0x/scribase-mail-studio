@@ -30,9 +30,17 @@ export const EmailEvents = [
   "email.opened",
   "email.clicked",
   "email.received",
+  "email.scheduled",
 ] as const;
 
 export type EmailWebhookEventType = (typeof EmailEvents)[number];
+
+export const SuppressionEvents = [
+  "suppression.added",
+  "suppression.removed",
+] as const;
+
+export type SuppressionWebhookEventType = (typeof SuppressionEvents)[number];
 
 export const WebhookTestEvents = ["webhook.test"] as const;
 
@@ -42,6 +50,7 @@ export const WebhookEvents = [
   ...ContactEvents,
   ...DomainEvents,
   ...EmailEvents,
+  ...SuppressionEvents,
   ...WebhookTestEvents,
 ] as const;
 
@@ -155,6 +164,14 @@ export type EmailClickedPayload = EmailBasePayload & {
   };
 };
 
+export type SuppressionPayload = {
+  id: string;
+  email: string;
+  reason: "Bounce" | "Complaint" | "Manual";
+  source?: string | null;
+  createdAt: string;
+};
+
 export type WebhookTestPayload = {
   test: boolean;
   webhookId: string;
@@ -193,6 +210,7 @@ export type EmailEventPayloadMap = {
   "email.opened": EmailOpenedPayload;
   "email.clicked": EmailClickedPayload;
   "email.received": ReceivedEmailPayload;
+  "email.scheduled": EmailBasePayload;
 };
 
 export type DomainEventPayloadMap = {
@@ -208,6 +226,11 @@ export type ContactEventPayloadMap = {
   "contact.deleted": ContactPayload;
 };
 
+export type SuppressionEventPayloadMap = {
+  "suppression.added": SuppressionPayload;
+  "suppression.removed": SuppressionPayload;
+};
+
 export type WebhookTestEventPayloadMap = {
   "webhook.test": WebhookTestPayload;
 };
@@ -215,6 +238,7 @@ export type WebhookTestEventPayloadMap = {
 export type WebhookEventPayloadMap = EmailEventPayloadMap &
   DomainEventPayloadMap &
   ContactEventPayloadMap &
+  SuppressionEventPayloadMap &
   WebhookTestEventPayloadMap;
 
 export type WebhookPayloadData<TType extends WebhookEventType> =

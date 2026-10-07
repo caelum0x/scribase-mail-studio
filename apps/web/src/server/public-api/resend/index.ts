@@ -13,6 +13,10 @@ import { registerBroadcastRoutes } from "./broadcasts";
 import { registerAttachmentRoutes } from "./attachments";
 import { registerShareRoutes } from "./share";
 import { registerMetricsRoutes } from "./metrics";
+import { registerWebhookRoutes } from "./webhooks";
+import { registerSuppressionRoutes } from "./suppressions";
+import { registerLogRoutes } from "./logs";
+import { requestLogMiddleware } from "../request-log-middleware";
 
 /**
  * Resend-compatible API. Each resource registers its routes here, in its own
@@ -21,6 +25,10 @@ import { registerMetricsRoutes } from "./metrics";
 export function buildResendApp() {
   const app = getResendApp();
 
+  // Async request logging (fire-and-forget); registered first so it wraps
+  // every route below.
+  app.use("*", requestLogMiddleware);
+
   // Fixed /emails/<word> paths go before the wildcard GET /emails/:id.
   registerMetricsRoutes(app);
   registerReceivedEmailRoutes(app);
@@ -28,6 +36,9 @@ export function buildResendApp() {
 
   registerDomainRoutes(app);
   registerApiKeyRoutes(app);
+  registerWebhookRoutes(app);
+  registerSuppressionRoutes(app);
+  registerLogRoutes(app);
 
   registerContactRoutes(app);
   registerTopicRoutes(app);
