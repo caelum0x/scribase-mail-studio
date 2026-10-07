@@ -105,6 +105,8 @@ declare module "next-auth" {
       isBetaUser: boolean;
       isAdmin: boolean;
       isWaitlisted: boolean;
+      /** Whether the user has TOTP enabled (shown to frontend for 2FA challenge routing). */
+      totpEnabled: boolean;
       // ...other properties
       // role: UserRole;
     } & DefaultSession["user"];
@@ -116,6 +118,7 @@ declare module "next-auth" {
     isBetaUser: boolean;
     isAdmin: boolean;
     isWaitlisted: boolean;
+    totpEnabled: boolean;
   }
 }
 
@@ -191,6 +194,7 @@ export const authOptions: NextAuthOptions = {
         isBetaUser: user.isBetaUser,
         isAdmin: user.email === env.ADMIN_EMAIL,
         isWaitlisted: user.isWaitlisted,
+        totpEnabled: user.totpEnabled ?? false,
       },
     }),
   },

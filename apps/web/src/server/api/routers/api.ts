@@ -11,6 +11,7 @@ import {
   deleteApiKey,
   updateApiKey,
 } from "~/server/service/api-service";
+import { recordAudit, userAuditCtx, AuditAction } from "~/server/service/audit-service";
 
 export const apiRouter = createTRPCRouter({
   createToken: teamProcedure
@@ -22,12 +23,18 @@ export const apiRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return await addApiKey({
+      const result = await addApiKey({
         name: input.name,
         permission: input.permission,
         teamId: ctx.team.id,
         domainId: input.domainId,
       });
+      await recordAudit(
+        userAuditCtx(ctx.team.id, ctx.session.user.id),
+        AuditAction.API_KEY_CREATED,
+        { targetType: "api_key", metadata: { name: input.name, permission: input.permission } },
+      );
+      return result;
     }),
 
   getApiKeys: teamProcedure.query(async ({ ctx }) => {
@@ -65,15 +72,26 @@ export const apiRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return await updateApiKey({
+      const result = await updateApiKey({
         id: input.id,
         teamId: ctx.team.id,
         name: input.name,
         domainId: input.domainId,
       });
+      await recordAudit(
+        userAuditCtx(ctx.team.id, ctx.session.user.id),
+        AuditAction.API_KEY_UPDATED,
+        { targetType: "api_key", targetId: input.id },
+      );
+      return result;
     }),
 
-  deleteApiKey: apiKeyProcedure.mutation(async ({ input }) => {
+  deleteApiKey: apiKeyProcedure.mutation(async ({ ctx, input }) => {
+    await recordAudit(
+      userAuditCtx(ctx.team.id, ctx.session.user.id),
+      AuditAction.API_KEY_DELETED,
+      { targetType: "api_key", targetId: input.id },
+    );
     return deleteApiKey(input.id);
   }),
 });
