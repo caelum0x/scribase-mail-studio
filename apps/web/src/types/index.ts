@@ -14,6 +14,13 @@ export type EmailContent = {
   unsubUrl?: string;
   scheduledAt?: string;
   inReplyToId?: string | null;
+  /** Resend-style tags, stored on Email.tags. */
+  tags?: Array<EmailTag>;
+};
+
+export type EmailTag = {
+  name: string;
+  value: string;
 };
 
 export type EmailAttachment = {

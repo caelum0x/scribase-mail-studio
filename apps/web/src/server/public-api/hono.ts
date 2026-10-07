@@ -3,7 +3,6 @@ import { swaggerUI } from "@hono/swagger-ui";
 import { Context, Next } from "hono";
 import { handleError } from "./api-error";
 import { env } from "~/env";
-import { getRedis, redisKey } from "~/server/redis";
 import { getTeamFromToken } from "~/server/public-api/auth";
 import { isSelfHosted } from "~/utils/common";
 import { UnsendApiError } from "./api-error";
@@ -14,9 +13,9 @@ import {
   DOMAIN_RESTRICTED_MESSAGE,
   SENDING_ONLY_MESSAGE,
 } from "./permissions";
+import { enforceTeamRateLimit } from "./rate-limit";
 
-/** Resend's default is 10 requests per second per team. */
-export const DEFAULT_API_RATE_LIMIT = 10;
+export { DEFAULT_API_RATE_LIMIT } from "./rate-limit";
 
 // Define AppEnv for Hono context
 export type AppEnv = {
@@ -88,15 +87,11 @@ export function getApp() {
     await next();
   });
 
-  // Custom Rate Limiter Middleware
-  const RATE_LIMIT_WINDOW_SECONDS = 1;
-
+  // Per-team rate limiter (shared with the Resend-compatible API)
   app.use("*", async (c: Context<AppEnv>, next: Next) => {
-    // Skip for self-hosted, or if team is not set (e.g. for public/doc paths not caught earlier)
-    // or if the path is one of the explicitly skipped paths for auth.
     if (
       isSelfHosted() ||
-      !c.var.team || // Team should be set by auth middleware for protected routes
+      !c.var.team ||
       c.req.path.startsWith("/api/v1/doc") ||
       c.req.path.startsWith("/api/v1/ui") ||
       c.req.path === "/api/health"
@@ -104,52 +99,7 @@ export function getApp() {
       return next();
     }
 
-    const team = c.var.team;
-    const limit = team.apiRateLimit ?? DEFAULT_API_RATE_LIMIT;
-    const key = redisKey(`rl:${team.id}`); // Rate limit key for Redis
-    const redis = getRedis();
-
-    let currentRequests: number;
-    let ttl: number;
-
-    try {
-      // Increment the key. If the key does not exist, it is created and set to 1.
-      currentRequests = await redis.incr(key);
-
-      if (currentRequests === 1) {
-        // This is the first request in the window, set the expiry.
-        await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
-      }
-      // Get the TTL (time to live) of the key to know when it resets.
-      // If the key does not exist or has no expiry, TTL returns -1 or -2.
-      // We rely on expire being set for new keys.
-      ttl = await redis.ttl(key);
-    } catch (error) {
-      logger.error({ err: error }, "Redis error during rate limiting");
-      // Alternatively, you could fail closed by throwing an error here.
-      return next();
-    }
-
-    const resetTime =
-      Math.floor(Date.now() / 1000) +
-      (ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS);
-    const remainingRequests = Math.max(0, limit - currentRequests);
-
-    c.res.headers.set("X-RateLimit-Limit", String(limit));
-    c.res.headers.set("X-RateLimit-Remaining", String(remainingRequests));
-    c.res.headers.set("X-RateLimit-Reset", String(resetTime));
-
-    if (currentRequests > limit) {
-      c.res.headers.set(
-        "Retry-After",
-        String(ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS),
-      );
-      throw new UnsendApiError({
-        code: "RATE_LIMITED",
-        message: `Rate limit exceeded. Try again in ${ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS} seconds.`,
-      });
-    }
-
+    await enforceTeamRateLimit(c, c.var.team);
     await next();
   });
 

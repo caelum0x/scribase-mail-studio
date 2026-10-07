@@ -72,6 +72,7 @@ export async function sendEmail(
     apiKeyId,
     inReplyToId,
     headers,
+    tags,
   } = emailContent;
   let subject = subjectFromApiCall;
   let html = htmlFromApiCall;
@@ -148,6 +149,7 @@ export async function sendEmail(
         cc: ccEmails.length > 0 ? ccEmails : undefined,
         bcc: bccEmails.length > 0 ? bccEmails : undefined,
         inReplyToId,
+        tags: tags && tags.length > 0 ? tags : undefined,
       },
     });
 
@@ -276,6 +278,7 @@ export async function sendEmail(
       apiId: apiKeyId,
       inReplyToId,
       headers: headers ? JSON.stringify(headers) : undefined,
+      tags: tags && tags.length > 0 ? tags : undefined,
     },
   });
 
