@@ -120,7 +120,7 @@ model Team {
   plan             Plan              @default(FREE)
   stripeCustomerId String?           @unique
   isActive         Boolean           @default(true)
-  apiRateLimit     Int               @default(2)
+  apiRateLimit     Int               @default(10)
   billingEmail     String?
   isVerified       Boolean           @default(false)
   dailyEmailLimit  Int               @default(10000)
@@ -140,6 +140,13 @@ model Team {
   suppressionList  SuppressionList[]
   webhookEndpoints Webhook[]
   webhookCalls     WebhookCall[]
+  // --- Resend parity (Wave 0) ---
+  topics           Topic[]
+  segments         Segment[]
+  contactProperties ContactProperty[]
+  apiRequestLogs   ApiRequestLog[]
+  auditLogs        AuditLog[]
+  receivedEmails   ReceivedEmail[]
 }
 
 model TeamInvite {
@@ -217,6 +224,19 @@ model Domain {
   updatedAt        DateTime     @updatedAt
   team             Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   apiKeys          ApiKey[]
+  // --- Resend parity (Wave 0) ---
+  /// Custom return-path (bounce) subdomain label; Resend default is "send".
+  customReturnPath     String?
+  /// OCI Email Delivery EmailReturnPath OCID.
+  returnPathProviderId String?
+  /// Return-path verification state as reported by OCI.
+  returnPathStatus     String?
+  tlsMode              DomainTlsMode @default(OPPORTUNISTIC)
+  /// Customer CNAME label for open/click tracking links, e.g. "links".
+  trackingSubdomain    String?
+  sendingEnabled       Boolean       @default(true)
+  receivingEnabled     Boolean       @default(false)
+  receivedEmails       ReceivedEmail[]
 }
 
 enum ApiPermission {
@@ -282,6 +302,14 @@ model Email {
   headers           String?
   team              Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   emailEvents       EmailEvent[]
+  // --- Resend parity (Wave 0) ---
+  /// Resend-style tags: [{ "name": string, "value": string }].
+  tags              Json?
+  /// Topic the email was sent under; recipients opted out of it are skipped.
+  topicId           String?
+  topic             Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  emailAttachments  EmailAttachment[]
+  shares            EmailShare[]
 
   @@index([campaignId, contactId])
   @@index([createdAt(sort: Desc)])
@@ -324,6 +352,9 @@ model ContactBook {
   emoji              String    @default("📙")
   team               Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
   contacts           Contact[]
+  // --- Resend parity (Wave 0) ---
+  /// The team's book behind the Resend top-level /contacts API (one per team, enforced in service code).
+  isDefault          Boolean   @default(false)
 
   @@index([teamId])
 }
@@ -353,6 +384,10 @@ model Contact {
   updatedAt         DateTime           @updatedAt
 
   contactBook ContactBook @relation(fields: [contactBookId], references: [id], onDelete: Cascade)
+
+  // --- Resend parity (Wave 0) ---
+  topics   ContactTopic[]
+  segments SegmentContact[]
 
   @@unique([contactBookId, email])
   @@index([contactBookId, id])
@@ -401,6 +436,11 @@ model Campaign {
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
+  // --- Resend parity (Wave 0) ---
+  /// Broadcast topic; contacts opted out of it are skipped.
+  topicId String?
+  topic   Topic?  @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
   @@index([createdAt(sort: Desc)])
   @@index([status, scheduledAt])
 }
@@ -417,6 +457,15 @@ model Template {
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
+  // --- Resend parity (Wave 0) ---
+  /// Human-readable unique handle usable instead of the id (Resend template alias).
+  alias       String?
+  /// Draft typed variables: [{ "key", "type": "string"|"number", "fallback_value" }].
+  variables   Json?
+  publishedAt DateTime?
+  versions    TemplateVersion[]
+
+  @@unique([teamId, alias])
   @@index([createdAt(sort: Desc)])
 }
 
@@ -503,6 +552,13 @@ model Webhook {
   calls               WebhookCall[]
   createdBy           User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
+  // --- Resend parity (Wave 0) ---
+  /// SVIX webhooks store a "whsec_<base64>" secret in `secret`.
+  signatureFormat         WebhookSignatureFormat @default(USESEND)
+  /// Previous secret kept valid during rotation until previousSecretExpiresAt.
+  previousSecret          String?
+  previousSecretExpiresAt DateTime?
+
   @@index([teamId])
 }
 
@@ -526,4 +582,255 @@ model WebhookCall {
 
   @@index([teamId, webhookId, status])
   @@index([createdAt(sort: Desc)])
+}
+
+// --- Resend parity (Wave 0) ---
+// Models and enums laid down in one migration (20261008000000_resend_parity_wave0)
+// so the Wave 1-3 agents (emails/domains/webhooks/logs compat, contacts/topics/
+// segments, templates, attachments/share, inbound) need no schema changes.
+// Fields added to existing models are marked with the same comment inline.
+
+enum WebhookSignatureFormat {
+  /// X-UseSend-Signature: v1=hex(HMAC_SHA256(secret, timestamp.body))
+  USESEND
+  /// svix-id / svix-timestamp / svix-signature (Resend, Standard Webhooks)
+  SVIX
+}
+
+enum DomainTlsMode {
+  OPPORTUNISTIC
+  ENFORCED
+}
+
+enum TopicSubscription {
+  OPT_IN
+  OPT_OUT
+}
+
+enum TopicVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum ContactPropertyType {
+  STRING
+  NUMBER
+}
+
+enum AuditActorType {
+  USER
+  API_KEY
+  SYSTEM
+}
+
+/// One row per attachment of an outbound email. `storageKey` points at OCI
+/// Object Storage once attachment bodies move out of Email.attachments.
+model EmailAttachment {
+  id          String   @id @default(cuid())
+  emailId     String
+  teamId      Int
+  filename    String
+  contentType String?
+  /// Content-ID for inline images referenced as cid:<contentId> in HTML.
+  contentId   String?
+  inline      Boolean  @default(false)
+  sizeBytes   Int?
+  /// Remote URL the attachment was fetched from (Resend `path`).
+  sourceUrl   String?
+  storageKey  String?
+  createdAt   DateTime @default(now())
+  email       Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@index([teamId])
+}
+
+/// Public, expiring read-only link to an email (POST /emails/{id}/share).
+model EmailShare {
+  id        String   @id @default(cuid())
+  emailId   String
+  teamId    Int
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+}
+
+/// Subscription topic (Resend /topics). Contacts opt in/out per topic.
+model Topic {
+  id                  String            @id @default(cuid())
+  teamId              Int
+  name                String
+  description         String?
+  defaultSubscription TopicSubscription @default(OPT_IN)
+  visibility          TopicVisibility   @default(PRIVATE)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  team                Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  contacts            ContactTopic[]
+  emails              Email[]
+  campaigns           Campaign[]
+
+  @@index([teamId])
+}
+
+/// Explicit per-contact topic preference. No row = topic default applies.
+model ContactTopic {
+  contactId    String
+  topicId      String
+  subscription TopicSubscription
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  contact      Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  topic        Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, topicId])
+  @@index([topicId])
+}
+
+/// Static segment (Resend /segments, /audiences alias): explicit membership.
+model Segment {
+  id        String           @id @default(cuid())
+  teamId    Int
+  name      String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  team      Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  contacts  SegmentContact[]
+
+  @@index([teamId])
+}
+
+model SegmentContact {
+  segmentId String
+  contactId String
+  createdAt DateTime @default(now())
+  segment   Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([segmentId, contactId])
+  @@index([contactId])
+}
+
+/// Typed contact property definition (Resend /contact-properties).
+model ContactProperty {
+  id            String              @id @default(cuid())
+  teamId        Int
+  key           String
+  type          ContactPropertyType
+  /// String or number matching `type`.
+  fallbackValue Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  team          Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, key])
+}
+
+/// Immutable snapshot of a template, created on publish.
+model TemplateVersion {
+  id          String    @id @default(cuid())
+  templateId  String
+  version     Int
+  subject     String
+  html        String?
+  content     String?
+  /// [{ "key", "type": "string"|"number", "fallback_value" }]
+  variables   Json?
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  template    Template  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+}
+
+/// Public API request log (Resend /logs). Bodies are stored redacted.
+model ApiRequestLog {
+  id           String   @id @default(cuid())
+  teamId       Int
+  apiKeyId     Int?
+  method       String
+  path         String
+  statusCode   Int
+  durationMs   Int
+  userAgent    String?
+  ipAddress    String?
+  requestBody  Json?
+  responseBody Json?
+  /// Resend error name for failed requests, e.g. "validation_error".
+  errorName    String?
+  createdAt    DateTime @default(now())
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+/// Team audit trail for dashboard and API mutations.
+model AuditLog {
+  id            String         @id @default(cuid())
+  teamId        Int
+  actorType     AuditActorType
+  actorUserId   Int?
+  actorApiKeyId Int?
+  /// Dotted action name, e.g. "api_key.created", "domain.deleted".
+  action        String
+  targetType    String?
+  targetId      String?
+  metadata      Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime       @default(now())
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt(sort: Desc)])
+}
+
+/// Inbound email accepted by our MX (OCI has no inbound).
+model ReceivedEmail {
+  id            String                    @id @default(cuid())
+  teamId        Int
+  domainId      Int?
+  /// Message-ID header of the received message.
+  messageId     String?
+  from          String
+  to            String[]
+  cc            String[]
+  bcc           String[]
+  replyTo       String[]
+  subject       String
+  text          String?
+  html          String?
+  headers       Json?
+  /// OCI Object Storage key of the raw RFC 5322 message.
+  rawStorageKey String?
+  sizeBytes     Int
+  spfResult     String?
+  dkimResult    String?
+  dmarcResult   String?
+  spamScore     Float?
+  createdAt     DateTime                  @default(now())
+  team          Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  domain        Domain?                   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  attachments   ReceivedEmailAttachment[]
+
+  @@index([teamId, createdAt(sort: Desc)])
+  @@index([messageId])
+}
+
+model ReceivedEmailAttachment {
+  id                 String        @id @default(cuid())
+  receivedEmailId    String
+  filename           String
+  contentType        String?
+  contentId          String?
+  contentDisposition String?
+  sizeBytes          Int
+  storageKey         String
+  createdAt          DateTime      @default(now())
+  receivedEmail      ReceivedEmail @relation(fields: [receivedEmailId], references: [id], onDelete: Cascade)
+
+  @@index([receivedEmailId])
 }

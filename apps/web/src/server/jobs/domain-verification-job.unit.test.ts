@@ -80,6 +80,13 @@ function createDomain(id: number, status: DomainStatus): Domain {
     isVerifying: status !== DomainStatus.SUCCESS,
     createdAt: new Date("2026-03-01T00:00:00.000Z"),
     updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+    customReturnPath: null,
+    returnPathProviderId: null,
+    returnPathStatus: null,
+    tlsMode: "OPPORTUNISTIC",
+    trackingSubdomain: null,
+    sendingEnabled: true,
+    receivingEnabled: false,
   };
 }
 
