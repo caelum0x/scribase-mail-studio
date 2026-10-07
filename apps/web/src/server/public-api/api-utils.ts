@@ -56,3 +56,30 @@ export const checkIsValidEmailIdWithDomainRestriction = async (
 
   return email;
 };
+
+/**
+ * Domain-restricted API keys may only reach campaigns sent from their domain.
+ * Unrestricted keys pass through. Returns 404 (not 403) so a restricted key
+ * cannot probe for campaign IDs on other domains.
+ */
+export const assertCampaignInApiKeyDomain = async (
+  campaignId: string,
+  teamId: number,
+  apiKeyDomainId: number | null | undefined,
+) => {
+  if (apiKeyDomainId === null || apiKeyDomainId === undefined) {
+    return;
+  }
+
+  const campaign = await db.campaign.findFirst({
+    where: { id: campaignId, teamId, domainId: apiKeyDomainId },
+    select: { id: true },
+  });
+
+  if (!campaign) {
+    throw new UnsendApiError({
+      code: "NOT_FOUND",
+      message: "Campaign not found",
+    });
+  }
+};

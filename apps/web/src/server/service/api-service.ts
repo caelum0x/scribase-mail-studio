@@ -57,7 +57,14 @@ export async function addApiKey({
 }
 
 export async function getTeamAndApiKey(apiKey: string) {
-  const [, clientId, token] = apiKey.split("_") as [string, string, string];
+  const parts = apiKey.split("_");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const [, clientId, token] = parts as [string, string, string];
+  if (!clientId || !token) {
+    return null;
+  }
 
   const apiKeyRow = await db.apiKey.findUnique({
     where: {

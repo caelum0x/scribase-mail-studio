@@ -7,13 +7,24 @@ import { getRedis, redisKey } from "~/server/redis";
 import { getTeamFromToken } from "~/server/public-api/auth";
 import { isSelfHosted } from "~/utils/common";
 import { UnsendApiError } from "./api-error";
-import { Team, ApiKey } from "@prisma/client";
+import { Team, ApiPermission } from "@prisma/client";
 import { logger } from "../logger/log";
+import {
+  checkApiKeyAccess,
+  DOMAIN_RESTRICTED_MESSAGE,
+  SENDING_ONLY_MESSAGE,
+} from "./permissions";
+
+/** Resend's default is 10 requests per second per team. */
+export const DEFAULT_API_RATE_LIMIT = 10;
 
 // Define AppEnv for Hono context
 export type AppEnv = {
   Variables: {
-    team: Team & { apiKeyId: number; apiKey: { domainId: number | null } };
+    team: Team & {
+      apiKeyId: number;
+      apiKey: { domainId: number | null; permission: ApiPermission };
+    };
   };
 };
 
@@ -48,6 +59,35 @@ export function getApp() {
     await next();
   });
 
+  // API key permission + domain-restriction enforcement
+  app.use("*", async (c: Context<AppEnv>, next: Next) => {
+    const team = c.var.team;
+    if (!team) {
+      return next();
+    }
+
+    const decision = checkApiKeyAccess(
+      {
+        permission: team.apiKey?.permission,
+        domainId: team.apiKey?.domainId,
+      },
+      c.req.method,
+      c.req.path,
+    );
+
+    if (!decision.allowed) {
+      throw new UnsendApiError({
+        code: "FORBIDDEN",
+        message:
+          decision.reason === "SENDING_ONLY"
+            ? SENDING_ONLY_MESSAGE
+            : DOMAIN_RESTRICTED_MESSAGE,
+      });
+    }
+
+    await next();
+  });
+
   // Custom Rate Limiter Middleware
   const RATE_LIMIT_WINDOW_SECONDS = 1;
 
@@ -65,7 +105,7 @@ export function getApp() {
     }
 
     const team = c.var.team;
-    const limit = team.apiRateLimit ?? 2; // Default limit from your previous setup
+    const limit = team.apiRateLimit ?? DEFAULT_API_RATE_LIMIT;
     const key = redisKey(`rl:${team.id}`); // Rate limit key for Redis
     const redis = getRedis();
 

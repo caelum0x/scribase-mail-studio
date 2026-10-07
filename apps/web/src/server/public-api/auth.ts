@@ -18,7 +18,14 @@ export const getTeamFromToken = async (c: Context) => {
     });
   }
 
-  const token = authHeader.split(" ")[1];
+  const [scheme, token] = authHeader.trim().split(/\s+/);
+
+  if (scheme?.toLowerCase() !== "bearer") {
+    throw new UnsendApiError({
+      code: "UNAUTHORIZED",
+      message: "Authorization header must use the Bearer scheme",
+    });
+  }
 
   if (!token) {
     throw new UnsendApiError({
@@ -59,5 +66,9 @@ export const getTeamFromToken = async (c: Context) => {
       logger.error({ err }, "Failed to update lastUsed on API key")
     );
 
-  return { ...team, apiKeyId: apiKey.id, apiKey: { domainId: apiKey.domainId } };
+  return {
+    ...team,
+    apiKeyId: apiKey.id,
+    apiKey: { domainId: apiKey.domainId, permission: apiKey.permission },
+  };
 };

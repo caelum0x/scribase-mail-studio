@@ -1,3 +1,4 @@
+import { assertCampaignInApiKeyDomain } from "~/server/public-api/api-utils";
 import { createRoute, z } from "@hono/zod-openapi";
 import { PublicAPIApp } from "~/server/public-api/hono";
 import { deleteCampaign } from "~/server/service/campaign-service";
@@ -36,6 +37,7 @@ function deleteCampaignHandle(app: PublicAPIApp) {
 	app.openapi(route, async (c) => {
 	  const team = c.var.team;
     const campaignId = c.req.param("campaignId");
+    await assertCampaignInApiKeyDomain(campaignId, team.id, team.apiKey.domainId);
 
     const campaign = await deleteCampaign(campaignId, team.id);
     return c.json(campaign);

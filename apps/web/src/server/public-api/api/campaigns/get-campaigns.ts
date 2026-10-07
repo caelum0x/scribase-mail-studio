@@ -71,6 +71,10 @@ function getCampaigns(app: PublicAPIApp) {
 			teamId: team.id,
 		};
 
+		if (team.apiKey.domainId !== null && team.apiKey.domainId !== undefined) {
+			whereConditions.domainId = team.apiKey.domainId;
+		}
+
 		if (statusParam) {
 			whereConditions.status = statusParam;
 		}
