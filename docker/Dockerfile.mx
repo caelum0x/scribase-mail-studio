@@ -31,11 +31,18 @@ RUN pnpm turbo run build --filter=smtp-server...
 
 # ─── Runner ───────────────────────────────────────────────────────────────────
 FROM base AS runner
-WORKDIR /app
 RUN apk add --no-cache tini
 
-COPY --from=installer /app/apps/smtp-server/dist ./dist
-COPY --from=installer /app/apps/smtp-server/node_modules ./node_modules
+# pnpm's apps/smtp-server/node_modules holds symlinks into the root
+# node_modules/.pnpm store, so keep the workspace layout: copying only the
+# app's node_modules leaves dangling links ("Cannot find module 'smtp-server'").
+WORKDIR /app
+COPY --from=installer /app/node_modules ./node_modules
+COPY --from=installer /app/packages ./packages
+COPY --from=installer /app/apps/smtp-server/node_modules ./apps/smtp-server/node_modules
+COPY --from=installer /app/apps/smtp-server/dist ./apps/smtp-server/dist
+COPY --from=installer /app/apps/smtp-server/package.json ./apps/smtp-server/package.json
+WORKDIR /app/apps/smtp-server
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/server.js"]
