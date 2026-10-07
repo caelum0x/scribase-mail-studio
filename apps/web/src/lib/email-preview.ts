@@ -25,3 +25,21 @@ export function getEmailPreviewSrcDoc(
 
   return null;
 }
+
+// No scripts, no network: remote images, fonts and forms in a held email
+// must not load (tracking pixels, phishing pages) while an admin reviews it.
+const REVIEW_PREVIEW_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'";
+
+/**
+ * srcDoc for the admin review preview. Use with an iframe `sandbox=""` (no
+ * allow-same-origin, no scripts); the CSP also blocks remote resources.
+ */
+export function getReviewPreviewSrcDoc(
+  html: string | null | undefined,
+  text: string | null | undefined,
+): string | null {
+  const doc = getEmailPreviewSrcDoc(html, text);
+  if (!doc) return null;
+  return `<meta http-equiv="Content-Security-Policy" content="${REVIEW_PREVIEW_CSP}">${doc}`;
+}

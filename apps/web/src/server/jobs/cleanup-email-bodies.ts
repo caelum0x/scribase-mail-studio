@@ -34,6 +34,8 @@ if (isSelfHosted() && isEmailCleanupEnabled()) {
             const result = await db.email.updateMany({
                 where: {
                     createdAt: {lt: cutoffDate},
+                    // Held emails still need their body for review and sending.
+                    latestStatus: {not: "HELD"},
                     OR: [
                         {text: {not: null}},
                         {html: {not: null}},

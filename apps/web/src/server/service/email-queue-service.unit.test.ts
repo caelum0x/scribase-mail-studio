@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDb, mockProvider, mockProcessEmailEvent, mockCheckEmailLimit } =
-  vi.hoisted(() => ({
+const {
+  mockDb,
+  mockProvider,
+  mockProcessEmailEvent,
+  mockCheckEmailLimit,
+  mockGate,
+} = vi.hoisted(() => ({
+    mockGate: vi.fn(),
     mockDb: {
       email: { findUnique: vi.fn(), update: vi.fn() },
       domain: { findUnique: vi.fn() },
@@ -32,6 +38,9 @@ vi.mock("~/server/service/email-event-service", () => ({
 }));
 vi.mock("~/server/service/limit-service", () => ({
   LimitService: { checkEmailLimit: mockCheckEmailLimit },
+}));
+vi.mock("~/server/service/send-gate-service", () => ({
+  gateOutgoingEmail: mockGate,
 }));
 vi.mock("~/server/redis", () => ({
   BULL_PREFIX: "test",
@@ -88,6 +97,7 @@ describe("executeEmail", () => {
       clickTracking: true,
     });
     mockCheckEmailLimit.mockResolvedValue({ isLimitReached: false });
+    mockGate.mockResolvedValue("send");
     mockProvider.ensureApprovedSender.mockResolvedValue({ created: false });
   });
 
@@ -187,6 +197,64 @@ describe("executeEmail", () => {
       where: { id: "em_1" },
       data: { latestStatus: "FAILED" },
     });
+  });
+
+  it("does not send when the gate holds the email", async () => {
+    mockGate.mockResolvedValue("held");
+
+    await executeEmail(job());
+
+    expect(mockGate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: expect.objectContaining({ id: "em_1", subject: "Hi" }),
+        isBulk: false,
+      }),
+    );
+    expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
+    expect(mockDb.email.update).not.toHaveBeenCalled();
+  });
+
+  it("does not send when the gate rejects the email", async () => {
+    mockGate.mockResolvedValue("rejected");
+
+    await executeEmail(job());
+
+    expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not screen again after an admin approved the email", async () => {
+    mockProvider.sendRawEmail.mockResolvedValue({
+      messageId: "em_1@acme.test",
+      accepted: ["user@example.com"],
+      rejected: [],
+    });
+
+    await executeEmail({
+      data: {
+        emailId: "em_1",
+        timestamp: Date.now(),
+        teamId: 7,
+        reviewApproved: true,
+      },
+      attemptsMade: 0,
+      opts: { attempts: 4 },
+    } as never);
+
+    expect(mockGate).not.toHaveBeenCalled();
+    expect(mockProvider.sendRawEmail).toHaveBeenCalled();
+  });
+
+  it("checks limits before screening (blocked teams are not screened)", async () => {
+    mockCheckEmailLimit.mockResolvedValue({
+      isLimitReached: true,
+      reason: "EMAIL_BLOCKED",
+      limit: 0,
+    });
+
+    await executeEmail(job());
+
+    expect(mockGate).not.toHaveBeenCalled();
+    expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
   });
 
   it("does not mark FAILED when only the bookkeeping after send fails", async () => {

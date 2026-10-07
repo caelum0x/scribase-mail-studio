@@ -6,9 +6,68 @@
  * - warm-up: new teams get a small daily cap that grows with account age
  * - reputation: teams whose bounce or complaint rate crosses a threshold are
  *   warned, then paused until an admin reviews them
+ * - content screening: every outgoing email is checked for malicious links
+ *   and spam/phishing signals (allow / hold for review / reject)
+ * - first-sends review: a new team's first emails wait for an admin
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * New teams' emails are held for admin review until the team has sent
+ * `emails` emails AND is `hours` old (or an admin trusts / verifies it).
+ * Both values can be overridden with FIRST_SENDS_REVIEW_EMAILS and
+ * FIRST_SENDS_REVIEW_HOURS; set both to 0 to turn the review off.
+ */
+export const FIRST_SENDS_REVIEW = {
+  emails: 20,
+  hours: 48,
+} as const;
+
+export type FirstSendsReviewPolicy = { emails: number; hours: number };
+
+export type ReviewableTeam = {
+  isVerified: boolean;
+  sendingTrustedAt: Date | string | null;
+  // May come back from the Redis team cache as a string.
+  createdAt: Date | string;
+};
+
+export function isFirstSendsReviewRequired({
+  team,
+  sentCount,
+  now,
+  policy = FIRST_SENDS_REVIEW,
+}: {
+  team: ReviewableTeam;
+  sentCount: number;
+  now: Date;
+  policy?: FirstSendsReviewPolicy;
+}): boolean {
+  if (policy.emails <= 0 && policy.hours <= 0) return false;
+  if (team.isVerified || team.sendingTrustedAt) return false;
+
+  const ageHours =
+    (now.getTime() - new Date(team.createdAt).getTime()) / HOUR_MS;
+  return ageHours < policy.hours || sentCount < policy.emails;
+}
+
+/**
+ * Content screening thresholds. Findings carry a score; hard findings
+ * (malicious link, blocked attachment) reject outright and count as a strike.
+ */
+export const SCREENING_POLICY = {
+  // Heuristic score at which an email is held for review.
+  holdScore: 5,
+  // Heuristic score at which an email is rejected without review.
+  rejectScore: 15,
+  // Rejections for malicious content within the window that block the team.
+  strikesToBlock: 3,
+  strikeWindowDays: 7,
+  // Admin notifications about new held emails go out at most this often.
+  heldNotifyCooldownMinutes: 30,
+} as const;
 
 // Ordered by minAgeDays ascending. dailyLimit -1 means no warm-up cap.
 export const WARMUP_TIERS: ReadonlyArray<{

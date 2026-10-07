@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateReputation,
+  FIRST_SENDS_REVIEW,
   getWarmupDailyLimit,
+  isFirstSendsReviewRequired,
   REPUTATION_POLICY,
+  SCREENING_POLICY,
 } from "./sending-policy";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -98,5 +101,96 @@ describe("evaluateReputation", () => {
     });
     expect(result.status).toBe("paused");
     expect(result.reason).toBe("COMPLAINT_RATE");
+  });
+});
+
+describe("isFirstSendsReviewRequired", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * HOUR_MS);
+  const base = { isVerified: false, sendingTrustedAt: null };
+
+  it("reviews a brand-new team's first sends", () => {
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(1) },
+        sentCount: 0,
+        now,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps reviewing until both the email count and the age are reached", () => {
+    // enough emails, too young
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(10) },
+        sentCount: FIRST_SENDS_REVIEW.emails,
+        now,
+      }),
+    ).toBe(true);
+    // old enough, too few emails
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(FIRST_SENDS_REVIEW.hours + 1) },
+        sentCount: FIRST_SENDS_REVIEW.emails - 1,
+        now,
+      }),
+    ).toBe(true);
+    // both reached
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(FIRST_SENDS_REVIEW.hours) },
+        sentCount: FIRST_SENDS_REVIEW.emails,
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("skips review for verified or trusted teams", () => {
+    const createdAt = hoursAgo(1);
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt, isVerified: true },
+        sentCount: 0,
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt, sendingTrustedAt: hoursAgo(0.5) },
+        sentCount: 0,
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("is disabled when both limits are zero", () => {
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(1) },
+        sentCount: 0,
+        now,
+        policy: { emails: 0, hours: 0 },
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts createdAt as a string (team cache)", () => {
+    expect(
+      isFirstSendsReviewRequired({
+        team: { ...base, createdAt: hoursAgo(1).toISOString() },
+        sentCount: 0,
+        now,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("SCREENING_POLICY", () => {
+  it("holds before it rejects and blocks only on repeat offenses", () => {
+    expect(SCREENING_POLICY.holdScore).toBeLessThan(
+      SCREENING_POLICY.rejectScore,
+    );
+    expect(SCREENING_POLICY.strikesToBlock).toBeGreaterThan(1);
   });
 });

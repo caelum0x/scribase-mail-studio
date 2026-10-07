@@ -1,6 +1,7 @@
 export const EMAIL_EVENT_QUEUE = "email-events";
 export const PROVIDER_SUPPRESSION_POLL_QUEUE = "provider-suppression-poll";
 export const REPUTATION_GUARD_QUEUE = "reputation-guard";
+export const THREAT_FEED_QUEUE = "threat-feed-refresh";
 export const CAMPAIGN_MAIL_PROCESSING_QUEUE = "campaign-emails-processing";
 export const CONTACT_BULK_ADD_QUEUE = "contact-bulk-add";
 export const CAMPAIGN_BATCH_QUEUE = "campaign-batch";

@@ -113,6 +113,7 @@ model Team {
   isBlocked        Boolean           @default(false)
   blockedReason    String?
   blockedAt        DateTime?
+  sendingTrustedAt DateTime?
   teamUsers        TeamUser[]
   domains          Domain[]
   apiKeys          ApiKey[]
@@ -126,6 +127,7 @@ model Team {
   suppressionList  SuppressionList[]
   webhookEndpoints Webhook[]
   webhookCalls     WebhookCall[]
+  emailReviews     EmailReview[]
 }
 
 model TeamInvite {
@@ -241,6 +243,7 @@ enum EmailStatus {
   FAILED
   CANCELLED
   SUPPRESSED
+  HELD
 }
 
 model Email {
@@ -268,6 +271,7 @@ model Email {
   headers           String?
   team              Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   emailEvents       EmailEvent[]
+  review            EmailReview?
 
   @@index([campaignId, contactId])
   @@index([createdAt(sort: Desc)])
@@ -293,6 +297,39 @@ model EmailEvent {
 
   @@index([emailId])
   @@index([teamId])
+}
+
+enum EmailReviewReason {
+  CONTENT
+  FIRST_SENDS
+}
+
+enum EmailReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// An email held for admin review before it goes to the shared tenancy.
+model EmailReview {
+  id        String            @id @default(cuid())
+  emailId   String            @unique
+  teamId    Int
+  reason    EmailReviewReason
+  status    EmailReviewStatus @default(PENDING)
+  score     Float             @default(0)
+  findings  Json?
+  // Send-job data needed to queue the email again after approval.
+  unsubUrl  String?
+  isBulk    Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  decidedAt DateTime?
+  decidedBy Int?
+  email     Email             @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  team      Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([teamId, status])
 }
 
 model ContactBook {

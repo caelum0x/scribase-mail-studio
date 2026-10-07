@@ -37,6 +37,11 @@ export async function register() {
           await import("~/server/jobs/reputation-guard-job");
         await initReputationGuardJob();
       }
+
+      // Threat feeds for content screening (any mode; off via env).
+      const { initThreatFeedJob } =
+        await import("~/server/jobs/threat-feed-job");
+      await initThreatFeedJob();
     }
 
     if (isEmailCleanupEnabled()) {

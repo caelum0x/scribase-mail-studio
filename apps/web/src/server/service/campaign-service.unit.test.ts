@@ -74,6 +74,10 @@ vi.mock("~/server/service/email-queue-service", () => ({
   EmailQueueService: {},
 }));
 
+vi.mock("~/server/service/content-screening-service", () => ({
+  ContentScreeningService: { assertSendable: vi.fn() },
+}));
+
 vi.mock("~/server/queue/bullmq-context", () => ({
   createWorkerHandler: vi.fn((handler) => handler),
 }));

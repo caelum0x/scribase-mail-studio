@@ -37,6 +37,10 @@ const route = createRoute({
             subject: z.string(),
             html: z.string().nullable(),
             text: z.string().nullable(),
+            latestStatus: z.nativeEnum(EmailStatus).nullable().openapi({
+              description:
+                "Current status. HELD means the email is waiting for Scribase Mail review before it is sent.",
+            }),
             createdAt: z.string(),
             updatedAt: z.string(),
             emailEvents: z.array(
@@ -74,6 +78,7 @@ function send(app: PublicAPIApp) {
         subject: true,
         html: true,
         text: true,
+        latestStatus: true,
         createdAt: true,
         updatedAt: true,
         emailEvents: {

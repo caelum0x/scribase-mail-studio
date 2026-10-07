@@ -4,6 +4,7 @@ import { apiRouter } from "./routers/api";
 import { emailRouter } from "./routers/email";
 import { teamRouter } from "./routers/team";
 import { adminRouter } from "./routers/admin";
+import { adminReviewRouter } from "./routers/admin-review";
 import { contactsRouter } from "./routers/contacts";
 import { campaignRouter } from "./routers/campaign";
 import { templateRouter } from "./routers/template";
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
   email: emailRouter,
   team: teamRouter,
   admin: adminRouter,
+  adminReview: adminReviewRouter,
   contacts: contactsRouter,
   campaign: campaignRouter,
   template: templateRouter,
