@@ -101,6 +101,7 @@ export async function sendEmail(
     inReplyToId,
     headers,
     tags,
+    topicId,
   } = emailContent;
   let subject = subjectFromApiCall;
   let html = htmlFromApiCall;
@@ -314,6 +315,7 @@ export async function sendEmail(
       inReplyToId,
       headers: headers ? JSON.stringify(headers) : undefined,
       tags: tags && tags.length > 0 ? tags : undefined,
+      ...(topicId ? { topicId } : {}),
     },
   });
 

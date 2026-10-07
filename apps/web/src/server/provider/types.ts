@@ -21,7 +21,14 @@ export type SendRawEmailInput = {
   subject: string;
   text?: string;
   html?: string;
-  attachments?: { filename: string; content: string }[];
+  attachments?: {
+    filename: string;
+    content: string;
+    /** Content-ID for inline (embedded) images. */
+    cid?: string;
+    /** MIME content-type, e.g. "image/png". */
+    contentType?: string;
+  }[];
   headers?: Record<string, string>;
   /** Full Message-ID without angle brackets, e.g. `abc@mail.example.com`. */
   messageId: string;
