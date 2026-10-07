@@ -1,0 +1,159 @@
+---
+title: Migrate from Resend
+description: "Switch from Resend to Scribase Mail by changing one line of code"
+icon: arrow-right-arrow-left
+---
+
+## Overview
+
+Scribase Mail exposes a Resend-compatible REST API at `https://mail-api.scribase.com`.
+The official Resend SDKs (Node, Python, Go, PHP, Ruby, Rust, Java, .NET, Elixir)
+all support a custom base URL, so migrating is usually a single environment variable
+change with zero code changes.
+
+---
+
+## 1 minute migration
+
+<Tabs>
+  <Tab title="Node.js (Resend SDK)">
+    Set the `RESEND_BASE_URL` environment variable before starting your app:
+
+    ```bash
+    RESEND_BASE_URL=https://mail-api.scribase.com node server.js
+    ```
+
+    Or pass it in the constructor:
+
+    ```typescript
+    import { Resend } from "resend";
+
+    const resend = new Resend(process.env.RESEND_API_KEY, {
+      baseUrl: "https://mail-api.scribase.com",
+    });
+    ```
+
+    Your Scribase Mail API key starts with `sm_`.
+  </Tab>
+  <Tab title="Python (resend)">
+    Set the `RESEND_API_URL` environment variable:
+
+    ```bash
+    export RESEND_API_KEY=sm_...
+    export RESEND_API_URL=https://mail-api.scribase.com
+    python app.py
+    ```
+
+    Or in code:
+
+    ```python
+    import resend
+
+    resend.api_key = "sm_..."
+    resend.api_url = "https://mail-api.scribase.com"
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    import "github.com/resend/resend-go/v2"
+
+    client := resend.NewClient("sm_...", resend.WithBaseURL("https://mail-api.scribase.com"))
+    ```
+  </Tab>
+  <Tab title="SMTP">
+    Update your SMTP host from `smtp.resend.com` to `smtp.mail.scribase.com`.
+    Port, TLS mode, and auth format (username: `scribase`, password: API key) are
+    the same.
+
+    | Setting | Resend | Scribase Mail |
+    |---------|--------|---------------|
+    | Host | `smtp.resend.com` | `smtp.mail.scribase.com` |
+    | Ports | 25, 465, 587, 2465, 2587 | 465, 587, 2465, 2587 |
+    | Username | `resend` | `scribase` |
+    | Password | Resend API key | Scribase Mail API key |
+  </Tab>
+</Tabs>
+
+---
+
+## API compatibility matrix
+
+All endpoints listed here accept the identical request/response shapes as the
+official Resend API.
+
+| Endpoint | Status | Notes |
+|---|---|---|
+| `POST /emails` | Supported | Includes scheduling, attachments, tags, templates |
+| `POST /emails/batch` | Supported | Up to 100 emails per request |
+| `GET /emails` | Supported | Cursor-based pagination (`limit`, `after`, `before`) |
+| `GET /emails/{id}` | Supported | Returns `object`, `last_event`, `tags`, `reply_to` |
+| `PATCH /emails/{id}` | Supported | Reschedule with ISO 8601 or natural language |
+| `POST /emails/{id}/cancel` | Supported | |
+| `GET /domains` | Supported | |
+| `POST /domains` | Supported | |
+| `GET /domains/{id}` | Supported | |
+| `POST /domains/{id}/verify` | Supported | |
+| `DELETE /domains/{id}` | Supported | |
+| `GET /api-keys` | Supported | |
+| `POST /api-keys` | Supported | |
+| `DELETE /api-keys/{id}` | Supported | |
+| `GET /contacts` | Supported | |
+| `POST /contacts` | Supported | |
+| `GET /contacts/{id}` | Supported | |
+| `PATCH /contacts/{id}` | Supported | |
+| `DELETE /contacts/{id}` | Supported | |
+| `GET /broadcasts` | Supported | |
+| `POST /broadcasts` | Supported | |
+| `GET /broadcasts/{id}` | Supported | |
+| `POST /broadcasts/{id}/send` | Supported | |
+| `GET /webhooks` | Coming soon | |
+| `POST /webhooks` | Coming soon | |
+| `GET /suppressions` | Supported | |
+| `POST /suppressions` | Supported | |
+| `DELETE /suppressions/{email}` | Supported | |
+
+---
+
+## Differences and limitations
+
+| Feature | Resend | Scribase Mail |
+|---|---|---|
+| Webhook signature format | Svix (`whsec_...`, `svix-signature` header) | X-UseSend-Signature; Svix format coming in Wave 4 |
+| Custom tracking subdomain | Supported | Not yet |
+| Attachment `path` (URL) | Supported (server-side fetch) | Not yet (use base64 `content`) |
+| Inline images via `content_id` | Supported | Not yet |
+| `topic_id` on send | Supported | Coming with Topics feature |
+| Inboxes / received email | Supported | Coming soon |
+| OAuth for third-party apps | Supported | Coming soon |
+| Dedicated IPs | Available as add-on | Available via OCI support request |
+
+---
+
+## Webhook migration
+
+Resend signs webhooks using the Svix format. Scribase Mail currently uses a
+different signature header (`X-UseSend-Signature`). To migrate webhook
+verification code, see the [Webhooks guide](/guides/webhooks).
+
+The Svix-compatible format is on the roadmap and will be available without any
+endpoint URL changes when it ships.
+
+---
+
+## Environment variables reference
+
+| Variable | Purpose |
+|---|---|
+| `RESEND_API_KEY` | API key — accepted by Scribase Mail compat layer |
+| `SCRIBASE_MAIL_API_KEY` | Preferred env var for Scribase Mail (takes precedence) |
+| `RESEND_BASE_URL` | Node SDK base URL override |
+| `SCRIBASE_MAIL_BASE_URL` | CLI / MCP server base URL override |
+| `RESEND_API_URL` | Python SDK base URL override |
+
+---
+
+## Getting help
+
+- [Dashboard](https://mail.scribase.com)
+- [GitHub](https://github.com/caelum0x/scribase-mail-studio)
+- [Support](mailto:hello@scribase.com)

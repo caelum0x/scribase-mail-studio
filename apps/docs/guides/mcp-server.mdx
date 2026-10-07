@@ -1,0 +1,148 @@
+---
+title: MCP Server
+description: "Use Scribase Mail from Claude, Cursor, or any Model Context Protocol client"
+icon: robot
+---
+
+## Overview
+
+The `@scribase-mail/mcp-server` package exposes the Scribase Mail API as a
+set of [Model Context Protocol](https://modelcontextprotocol.io) tools.
+This lets AI assistants (Claude, Cursor, Cline, Continue, etc.) send email,
+manage domains, and inspect your mailbox through natural language requests.
+
+---
+
+## Installation
+
+### npx (no install required)
+
+```bash
+SCRIBASE_MAIL_API_KEY=sm_... npx @scribase-mail/mcp-server
+```
+
+### Global install
+
+```bash
+npm install -g @scribase-mail/mcp-server
+SCRIBASE_MAIL_API_KEY=sm_... scribase-mail-mcp
+```
+
+---
+
+## Claude Desktop configuration
+
+Add the following to `~/.claude/claude_desktop_config.json` (create the file if
+it does not exist):
+
+```json
+{
+  "mcpServers": {
+    "scribase-mail": {
+      "command": "npx",
+      "args": ["@scribase-mail/mcp-server"],
+      "env": {
+        "SCRIBASE_MAIL_API_KEY": "sm_..."
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop.  You should see **scribase-mail** appear in the tool list.
+
+---
+
+## Cursor / VS Code configuration
+
+In `.cursor/mcp.json` (workspace) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "scribase-mail": {
+      "command": "npx",
+      "args": ["@scribase-mail/mcp-server"],
+      "env": {
+        "SCRIBASE_MAIL_API_KEY": "sm_..."
+      }
+    }
+  }
+}
+```
+
+---
+
+## Remote (Streamable HTTP) deployment
+
+The package ships a second entry point, `@scribase-mail/mcp-server/http`, that
+exposes a Streamable HTTP transport suitable for hosting as a shared endpoint.
+
+### Standalone server
+
+```bash
+SCRIBASE_MAIL_API_KEY=sm_... MCP_PORT=3100 node node_modules/@scribase-mail/mcp-server/dist/http.js
+```
+
+### Next.js route handler
+
+Create `app/api/mcp/route.ts` (App Router) or `pages/api/mcp.ts` (Pages
+Router) in your Next.js app:
+
+```typescript
+// app/api/mcp/route.ts
+import { createHttpHandler } from "@scribase-mail/mcp-server/http";
+
+const handler = createHttpHandler({
+  apiKey: process.env.SCRIBASE_MAIL_API_KEY,
+});
+
+export const POST = handler;
+```
+
+Add the environment variable to your deployment and point your MCP client at
+`https://your-app.vercel.app/api/mcp`.
+
+### Self-hosted Caddy rewrite
+
+If you self-host Scribase Mail, add the following to your Caddyfile to expose
+the MCP server at `https://mail-api.scribase.com/mcp`:
+
+```caddy
+reverse_proxy /mcp* localhost:3100
+```
+
+---
+
+## Available tools
+
+| Tool | Description |
+|---|---|
+| `send_email` | Send a transactional email (HTML, plain text, attachments, tags, scheduled) |
+| `batch_send_emails` | Send up to 100 emails in one request |
+| `get_email` | Retrieve a sent email by ID |
+| `list_emails` | List sent emails with cursor pagination |
+| `cancel_email` | Cancel a scheduled email |
+| `reschedule_email` | Change the delivery time of a scheduled email |
+| `list_domains` | List configured sending domains |
+| `get_domain` | Get a domain and its DNS verification records |
+| `create_domain` | Add a new sending domain |
+| `verify_domain` | Trigger DNS verification |
+| `delete_domain` | Remove a domain |
+| `list_contacts` | List contacts in an audience |
+| `create_contact` | Add a contact to an audience |
+| `list_broadcasts` | List broadcast campaigns |
+| `get_broadcast` | Get a broadcast by ID |
+| `list_received_emails` | List inbound emails |
+| `get_received_email` | Get a single inbound email |
+
+---
+
+## Environment variables
+
+| Variable | Description |
+|---|---|
+| `SCRIBASE_MAIL_API_KEY` | Your Scribase Mail API key (required) |
+| `RESEND_API_KEY` | Accepted as a fallback |
+| `SCRIBASE_MAIL_BASE_URL` | Override base URL (default: `https://mail-api.scribase.com`) |
+| `MCP_PORT` | HTTP server port (default: `3100`) |

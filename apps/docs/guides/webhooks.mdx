@@ -485,3 +485,31 @@ All domain events (`domain.created`, `domain.verified`, `domain.updated`, `domai
   dmarcAdded?: boolean;    // DMARC record added
 }
 ```
+
+---
+
+## Resend / Svix signature format
+
+If you are migrating from Resend and your code uses `resend.webhooks.verify()` or
+the `svix` npm package to verify signatures, note that Scribase Mail currently uses
+its own signature format (`X-UseSend-Signature`).
+
+Svix-compatible webhook signing is on the roadmap.  Until it ships, use the
+`usesend-js` SDK's `webhooks.constructEvent()` method shown above.
+
+Relevant Resend fields and their Scribase Mail equivalents:
+
+| Resend header | Scribase Mail header |
+|---|---|
+| `svix-id` | `X-UseSend-Call` |
+| `svix-timestamp` | `X-UseSend-Timestamp` |
+| `svix-signature` | `X-UseSend-Signature` |
+
+The signature algorithm for the current format is:
+
+```
+HMAC-SHA256(secret, "${timestamp}.${rawBody}")
+```
+
+The `timestamp` is the value of `X-UseSend-Timestamp` (Unix epoch seconds).
+The `secret` is the raw string from the dashboard (no base64 decoding required).
