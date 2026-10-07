@@ -1,4 +1,5 @@
 import { SMTPServer, SMTPServerOptions, SMTPServerSession } from "smtp-server";
+import { startInboundServer } from "./inbound/server";
 import { Readable } from "stream";
 import dotenv from "dotenv";
 import { simpleParser } from "mailparser";
@@ -198,6 +199,12 @@ function startServers() {
 }
 
 const { servers, watchers } = startServers();
+
+// Start the inbound MX server when explicitly enabled.
+if (process.env.INBOUND_ENABLED === "true") {
+  const inboundServer = startInboundServer();
+  servers.push(inboundServer);
+}
 
 function shutdown() {
   console.log("Shutting down SMTP server...");

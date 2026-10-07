@@ -18,6 +18,7 @@ import {
 import { LimitService } from "./limit-service";
 import type { DomainDnsRecord } from "~/types/domain";
 import { WebhookService } from "./webhook-service";
+import { buildMxRecord } from "./domain-receiving";
 
 const DOMAIN_STATUS_VALUES = new Set(Object.values(DomainStatus));
 export const DOMAIN_UNVERIFIED_RECHECK_MS = 6 * 60 * 60 * 1000;
@@ -81,7 +82,7 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
     ? DomainStatus.SUCCESS
     : DomainStatus.NOT_STARTED;
 
-  return [
+  const records: DomainDnsRecord[] = [
     {
       type: "CNAME",
       name: toRelativeHost(dkimFqdn, baseDomain),
@@ -105,6 +106,13 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
       recommended: true,
     },
   ];
+
+  // Append MX record when receiving is enabled for this domain.
+  if (domain.receivingEnabled) {
+    records.push(buildMxRecord(domain));
+  }
+
+  return records;
 }
 
 function withDnsRecords<T extends Domain>(

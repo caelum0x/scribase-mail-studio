@@ -1,5 +1,6 @@
 import { getResendApp } from "./app";
 import { registerEmailRoutes } from "./emails";
+import { registerReceivedEmailRoutes } from "./received";
 
 /**
  * Resend-compatible API. Each resource registers its routes here; Wave 1-3
@@ -9,6 +10,7 @@ import { registerEmailRoutes } from "./emails";
 export function buildResendApp() {
   const app = getResendApp();
   registerEmailRoutes(app);
+  registerReceivedEmailRoutes(app);
   return app;
 }
 

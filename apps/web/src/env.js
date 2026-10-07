@@ -115,6 +115,10 @@ export const env = createEnv({
     // Public host/user shown to customers for the Scribase Mail SMTP proxy (apps/smtp-server)
     SMTP_PUBLIC_HOST: z.string().default("smtp.mail.scribase.com"),
     SMTP_PUBLIC_USER: z.string().default("scribase"),
+    // Inbound MX server shared secret (web ↔ mx-server internal API)
+    INBOUND_INTERNAL_SECRET: z.string().optional(),
+    // Hostname announced as this MX (shown in domain DNS record instructions)
+    INBOUND_MX_HOSTNAME: z.string().default("inbound.scribase.com"),
     CONTACT_BOOK_ID: z.string().optional(),
     EMAIL_CLEANUP_DAYS: z
       .string()
@@ -200,6 +204,8 @@ export const env = createEnv({
     SMTP_PUBLIC_USER: process.env.SMTP_PUBLIC_USER,
     CONTACT_BOOK_ID: process.env.CONTACT_BOOK_ID,
     EMAIL_CLEANUP_DAYS: process.env.EMAIL_CLEANUP_DAYS,
+    INBOUND_INTERNAL_SECRET: process.env.INBOUND_INTERNAL_SECRET,
+    INBOUND_MX_HOSTNAME: process.env.INBOUND_MX_HOSTNAME,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
