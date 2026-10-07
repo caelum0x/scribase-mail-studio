@@ -30,6 +30,13 @@ export async function register() {
       const { initProviderSuppressionPollJob } =
         await import("~/server/jobs/provider-suppression-poll-job");
       await initProviderSuppressionPollJob();
+
+      // Shared-tenancy abuse control; only multi-tenant (cloud) installs need it.
+      if (isCloud()) {
+        const { initReputationGuardJob } =
+          await import("~/server/jobs/reputation-guard-job");
+        await initReputationGuardJob();
+      }
     }
 
     if (isEmailCleanupEnabled()) {

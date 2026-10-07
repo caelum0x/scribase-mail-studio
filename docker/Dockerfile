@@ -4,7 +4,10 @@ ENV PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 ENV SKIP_ENV_VALIDATION="true"
 ENV DOCKER_OUTPUT 1
 ENV NEXT_TELEMETRY_DISABLED 1
-ENV NEXT_PUBLIC_IS_CLOUD="false"
+# "true" = multi-tenant Scribase Mail (waitlist sign-up, plan limits, warm-up,
+# reputation guard). NEXT_PUBLIC_* values are baked into the client bundle.
+ARG IS_CLOUD=false
+ENV NEXT_PUBLIC_IS_CLOUD=$IS_CLOUD
 
 RUN corepack enable
 

@@ -86,8 +86,8 @@ export async function sendSubscriptionConfirmationEmail(email: string) {
 
 /**
  * System emails (sign-in codes, invites, notifications) go straight to the
- * provider relay from FROM_EMAIL, so a fresh install can sign users in before
- * any team domain is verified. Returns false when the relay is unavailable.
+ * provider relay from FROM_EMAIL (in cloud and self-hosted mode), so a fresh
+ * install can sign users in before any team domain is verified. Returns false when the relay is unavailable.
  */
 async function sendSystemMail({
   email,
@@ -136,8 +136,9 @@ export async function sendMail(
   replyTo?: string,
   fromOverride?: string,
 ) {
+  // Cloud and self-hosted both relay system mail through the provider; the
+  // upstream useSend cloud client is never the first choice.
   if (
-    isSelfHosted() &&
     env.FROM_EMAIL &&
     (await sendSystemMail({
       email,

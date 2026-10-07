@@ -111,6 +111,8 @@ model Team {
   isVerified       Boolean           @default(false)
   dailyEmailLimit  Int               @default(10000)
   isBlocked        Boolean           @default(false)
+  blockedReason    String?
+  blockedAt        DateTime?
   teamUsers        TeamUser[]
   domains          Domain[]
   apiKeys          ApiKey[]

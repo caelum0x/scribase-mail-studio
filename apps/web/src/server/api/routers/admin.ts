@@ -6,6 +6,7 @@ import { createTRPCRouter, adminProcedure } from "~/server/api/trpc";
 import { ProviderSettingsService } from "~/server/service/provider-settings-service";
 import { getEmailProvider } from "~/server/provider";
 import { db } from "~/server/db";
+import { TeamService } from "~/server/service/team-service";
 import { sendMail } from "~/server/mailer";
 import { logger } from "~/server/logger/log";
 import { UseSend } from "usesend-js";
@@ -38,6 +39,8 @@ const teamAdminSelection = {
   apiRateLimit: true,
   dailyEmailLimit: true,
   isBlocked: true,
+  blockedReason: true,
+  blockedAt: true,
   billingEmail: true,
   createdAt: true,
   teamUsers: {
@@ -127,6 +130,28 @@ export const adminRouter = createTRPCRouter({
         data: { isWaitlisted: input.isWaitlisted },
         select: waitlistUserSelection,
       });
+
+      // Waitlisting only gates the dashboard; API keys and SMTP keep working.
+      // Re-waitlisting an approved user therefore also blocks the teams they
+      // administer so sending stops too.
+      if (!existingUser.isWaitlisted && input.isWaitlisted) {
+        const adminTeams = await db.teamUser.findMany({
+          where: { userId: input.userId, role: "ADMIN" },
+          select: { teamId: true },
+        });
+        const teamIds = adminTeams.map((t) => t.teamId);
+        await db.team.updateMany({
+          where: { id: { in: teamIds }, isBlocked: false },
+          data: {
+            isBlocked: true,
+            blockedReason: "MANUAL: owner moved back to waitlist",
+            blockedAt: new Date(),
+          },
+        });
+        await Promise.all(
+          teamIds.map((id) => TeamService.invalidateTeamCache(id)),
+        );
+      }
 
       const founderEmail = env.FOUNDER_EMAIL ?? undefined;
       const fallbackFrom = env.FROM_EMAIL ?? env.ADMIN_EMAIL ?? undefined;
@@ -353,13 +378,33 @@ export const adminRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input }) => {
-      const { teamId, ...data } = input;
+      const { teamId, ...settings } = input;
 
-      const updatedTeam = await db.team.update({
-        where: { id: teamId },
-        data,
-        select: teamAdminSelection,
+      const updatedTeam = await db.$transaction(async (tx) => {
+        // Row lock so the reputation guard can't change the block state
+        // between this read and the update.
+        await tx.$queryRaw`SELECT id FROM "Team" WHERE id = ${teamId} FOR UPDATE`;
+        const current = await tx.team.findUnique({
+          where: { id: teamId },
+          select: { isBlocked: true },
+        });
+        // Keep the reason in sync with the flag: unblocking clears it, a manual
+        // block records it (the reputation guard writes its own reason).
+        const blockChange =
+          current && current.isBlocked !== settings.isBlocked
+            ? settings.isBlocked
+              ? { blockedReason: "MANUAL: blocked by admin", blockedAt: new Date() }
+              : { blockedReason: null, blockedAt: null }
+            : {};
+
+        return tx.team.update({
+          where: { id: teamId },
+          data: { ...settings, ...blockChange },
+          select: teamAdminSelection,
+        });
       });
+      // Limits and block state are read from the team cache when sending.
+      await TeamService.invalidateTeamCache(teamId);
 
       return updatedTeam;
     }),

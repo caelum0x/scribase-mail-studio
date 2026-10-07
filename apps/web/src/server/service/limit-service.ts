@@ -6,10 +6,18 @@ import { withCache } from "../redis";
 import { db } from "../db";
 import { logger } from "../logger/log";
 import { Plan } from "@prisma/client";
+import { getWarmupDailyLimit } from "~/lib/constants/sending-policy";
 
 function isLimitExceeded(current: number, limit: number): boolean {
   if (limit === -1) return false; // unlimited
   return current >= limit;
+}
+
+// The stricter of two limits, where -1 means unlimited.
+function stricterLimit(a: number, b: number): number {
+  if (a === -1) return b;
+  if (b === -1) return a;
+  return Math.min(a, b);
 }
 
 function getActivePlan(team: { plan: Plan; isActive: boolean }): Plan {
@@ -167,10 +175,18 @@ export class LimitService {
 
     const dailyUsage = usage.day.reduce((acc, curr) => acc + curr.sent, 0);
     const activePlan = getActivePlan(team);
-    const dailyLimit =
+    const planDailyLimit =
       activePlan !== "FREE"
         ? team.dailyEmailLimit
         : PLAN_LIMITS.FREE.emailsPerDay;
+    // New teams warm up on the shared tenancy unless an admin verified them.
+    // createdAt may come back from the Redis cache as a string.
+    const dailyLimit = team.isVerified
+      ? planDailyLimit
+      : stricterLimit(
+          planDailyLimit,
+          getWarmupDailyLimit(new Date(team.createdAt), new Date()),
+        );
 
     logger.info(
       { dailyUsage, dailyLimit, team },

@@ -196,6 +196,14 @@ export default function AdminTeamsPage() {
               </Badge>
             </div>
           </div>
+          {team.isBlocked && team.blockedReason ? (
+            <p className="text-sm text-destructive">
+              {team.blockedReason}
+              {team.blockedAt
+                ? ` (${formatDistanceToNow(new Date(team.blockedAt), { addSuffix: true })})`
+                : ""}
+            </p>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-3">

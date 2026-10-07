@@ -54,6 +54,7 @@ export const env = createEnv({
     SMTP_PASS: z.string().optional(),
     // How often the provider suppression list is polled for bounces/complaints
     SUPPRESSION_POLL_CRON: z.string().default("*/5 * * * *"),
+    REPUTATION_GUARD_CRON: z.string().default("*/10 * * * *"),
     API_RATE_LIMIT: z
       .string()
       .default("1")
@@ -128,6 +129,7 @@ export const env = createEnv({
     SMTP_PORT: process.env.SMTP_PORT,
     SMTP_PASS: process.env.SMTP_PASS,
     SUPPRESSION_POLL_CRON: process.env.SUPPRESSION_POLL_CRON,
+    REPUTATION_GUARD_CRON: process.env.REPUTATION_GUARD_CRON,
     API_RATE_LIMIT: process.env.API_RATE_LIMIT,
     AUTH_EMAIL_RATE_LIMIT: process.env.AUTH_EMAIL_RATE_LIMIT,
     NEXT_PUBLIC_IS_CLOUD: process.env.NEXT_PUBLIC_IS_CLOUD,
