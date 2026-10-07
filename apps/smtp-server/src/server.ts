@@ -140,7 +140,7 @@ const serverOptions: SMTPServerOptions = {
   size: 10485760,
 };
 
-function startServers() {
+function startServers(reservedPorts: Set<number>) {
   const servers: SMTPServer[] = [];
   const watchers: FSWatcher[] = [];
 
@@ -163,8 +163,11 @@ function startServers() {
     });
   }
 
-  // STARTTLS for ports 25, 587, and 2587
-  [25, 587, 2587].forEach((port) => {
+  // STARTTLS for ports 25, 587, and 2587. The inbound MX owns its port when
+  // enabled, so the submission proxy must not bind it too (EADDRINUSE).
+  [25, 587, 2587]
+    .filter((port) => !reservedPorts.has(port))
+    .forEach((port) => {
     const server = new SMTPServer(serverOptions);
 
     server.listen(port, () => {
@@ -198,10 +201,18 @@ function startServers() {
   return { servers, watchers };
 }
 
-const { servers, watchers } = startServers();
+const inboundEnabled = process.env.INBOUND_ENABLED === "true";
+// SUBMISSION_ENABLED=false runs this process as a pure inbound MX (the
+// dedicated `mx` container): no authenticated relay ports at all.
+const submissionEnabled = process.env.SUBMISSION_ENABLED !== "false";
+const inboundPort = Number(process.env.INBOUND_PORT ?? 25);
+
+const { servers, watchers } = submissionEnabled
+  ? startServers(new Set(inboundEnabled ? [inboundPort] : []))
+  : { servers: [] as SMTPServer[], watchers: [] as FSWatcher[] };
 
 // Start the inbound MX server when explicitly enabled.
-if (process.env.INBOUND_ENABLED === "true") {
+if (inboundEnabled) {
   const inboundServer = startInboundServer();
   servers.push(inboundServer);
 }

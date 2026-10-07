@@ -194,6 +194,8 @@ services:
       - "0.0.0.0:25:25"
     environment:
       INBOUND_ENABLED: "true"
+      # Pure MX: the authenticated submission proxy is not exposed here.
+      SUBMISSION_ENABLED: "false"
       INBOUND_PORT: "25"
       SCRIBASE_MAIL_BASE_URL: http://web:3000
       INBOUND_INTERNAL_SECRET: ${INBOUND_INTERNAL_SECRET:?set INBOUND_INTERNAL_SECRET}
