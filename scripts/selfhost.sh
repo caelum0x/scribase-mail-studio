@@ -11,7 +11,11 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required: https://docs.docker.com/get-docker/" >&2
   exit 1
 fi
-if ! docker compose version >/dev/null 2>&1; then
+if docker compose version >/dev/null 2>&1; then
+  dc() { docker compose "$@"; }
+elif command -v docker-compose >/dev/null 2>&1 && docker-compose version 2>/dev/null | grep -Eq 'v?2\.'; then
+  dc() { docker-compose "$@"; }
+else
   echo "Docker Compose v2 is required (docker compose)." >&2
   exit 1
 fi
@@ -41,13 +45,13 @@ else
 fi
 
 if [ "${1:-}" = "--build" ]; then
-  docker compose up -d --build
+  dc up -d --build
 else
-  if ! docker compose pull --quiet web 2>/dev/null; then
+  if ! dc pull --quiet web 2>/dev/null; then
     echo "Prebuilt image not available; building from source (several minutes)."
-    docker compose build web
+    dc build web
   fi
-  docker compose up -d
+  dc up -d
 fi
 
 port="$(grep -E '^SCRIBASE_MAIL_PORT=' .env | tail -1 | cut -d= -f2 | tr -d '"' || true)"
@@ -55,7 +59,7 @@ port="${port:-3000}"
 
 printf 'Waiting for Scribase Mail to become healthy'
 i=0
-until [ "$(docker compose ps --format '{{.Health}}' web 2>/dev/null)" = "healthy" ]; do
+until [ "$(dc ps --format '{{.Health}}' web 2>/dev/null)" = "healthy" ]; do
   i=$((i + 1))
   if [ "$i" -gt 90 ]; then
     echo
