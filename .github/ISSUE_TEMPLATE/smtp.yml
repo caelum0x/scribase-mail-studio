@@ -1,5 +1,5 @@
 name: SMTP Issue
-description: Issue relataed to SMTP
+description: Issue related to SMTP
 labels: ["smtp"]
 body:
   - type: markdown

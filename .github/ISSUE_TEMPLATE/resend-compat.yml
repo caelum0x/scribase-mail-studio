@@ -1,0 +1,43 @@
+name: Resend compatibility gap
+description: A Resend SDK call or API endpoint that behaves differently on Scribase Mail
+labels: ["resend-compat"]
+title: "compat: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scribase Mail aims to be a drop-in target for the official Resend SDKs. Tell us what differs.
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint or SDK method
+      placeholder: "POST /emails/batch or resend.broadcasts.send()"
+    validations:
+      required: true
+  - type: input
+    id: sdk
+    attributes:
+      label: SDK and version
+      placeholder: "resend (Node) 6.32.1"
+  - type: textarea
+    id: expected
+    attributes:
+      label: What Resend returns
+      description: Response body or behavior on api.resend.com (redact keys and addresses)
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What Scribase Mail returns
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Self hosted or Cloud?
+      options:
+        - Cloud (mail-api.scribase.com)
+        - Self hosted
+    validations:
+      required: true
