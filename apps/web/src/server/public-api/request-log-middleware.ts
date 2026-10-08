@@ -24,9 +24,7 @@ export function getLogRetentionDays(): number {
   // Using globalThis so the call is valid in both Node and Edge environments.
   const env = (globalThis as Record<string, unknown>)["process"];
   const raw =
-    env !== null &&
-    typeof env === "object" &&
-    "env" in (env as object)
+    env !== null && typeof env === "object" && "env" in (env as object)
       ? (env as { env: Record<string, string | undefined> }).env[
           "API_LOG_RETENTION_DAYS"
         ]
@@ -57,7 +55,11 @@ function redactBody(obj: unknown, depth = 0): unknown {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     const lkey = key.toLowerCase();
-    if (SENSITIVE_KEYS.has(lkey) || lkey.includes("secret") || lkey.includes("token")) {
+    if (
+      SENSITIVE_KEYS.has(lkey) ||
+      lkey.includes("secret") ||
+      lkey.includes("token")
+    ) {
       result[key] = "[REDACTED]";
     } else {
       result[key] = redactBody(value, depth + 1);
@@ -154,25 +156,32 @@ export async function requestLogMiddleware(
 
   // Fire-and-forget: the write happens after the response is already sent.
   // `queueMicrotask` is available in both Node and Edge runtimes.
+  // Promise.resolve().then(...) turns synchronous throws into rejections, so
+  // a logging failure can never surface as an uncaught exception.
   queueMicrotask(() => {
-    void db.apiRequestLog
-      .create({
-        data: {
-          teamId,
-          apiKeyId: team.apiKeyId ?? null,
-          method: c.req.method,
-          path: new URL(c.req.url).pathname,
-          statusCode: status,
-          durationMs,
-          userAgent: c.req.header("user-agent") ?? null,
-          ipAddress: getClientIp(c),
-          requestBody: requestBody ?? undefined,
-          responseBody: responseBody ?? undefined,
-          errorName: extractErrorName(responseBody),
-        },
-      })
+    void Promise.resolve()
+      .then(() =>
+        db.apiRequestLog.create({
+          data: {
+            teamId,
+            apiKeyId: team.apiKeyId ?? null,
+            method: c.req.method,
+            path: new URL(c.req.url).pathname,
+            statusCode: status,
+            durationMs,
+            userAgent: c.req.header("user-agent") ?? null,
+            ipAddress: getClientIp(c),
+            requestBody: requestBody ?? undefined,
+            responseBody: responseBody ?? undefined,
+            errorName: extractErrorName(responseBody),
+          },
+        }),
+      )
       .catch((err: unknown) => {
-        logger.error({ err }, "[requestLogMiddleware] failed to write ApiRequestLog");
+        logger.error(
+          { err },
+          "[requestLogMiddleware] failed to write ApiRequestLog",
+        );
       });
   });
 }
