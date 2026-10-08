@@ -72,6 +72,10 @@ jobs:
             GIT_SHA=${{ github.sha }}
             IS_CLOUD=false
           tags: ${{ env.IMAGE }}:${{ github.sha }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=Scribase Mail: self-hosted, Resend-compatible email API and dashboard
+            org.opencontainers.image.licenses=AGPL-3.0-only
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
