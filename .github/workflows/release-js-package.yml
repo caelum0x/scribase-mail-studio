@@ -1,12 +1,9 @@
 name: Release JS Packages
 
+# Inherited from upstream useSend, which publishes its own SDK packages.
+# Manual only in this fork so nothing is published under upstream names.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "packages/sdk/**" # Trigger only changes in packages
-      - ".github/workflows/release-js-package.yml"
+  workflow_dispatch:
 
 permissions:
   id-token: write # Required for OIDC

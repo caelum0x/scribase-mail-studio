@@ -1,0 +1,82 @@
+# Scribase Mail: self-host stack (web + Postgres + Redis, plus Mailpit for
+# local trials). Start it with ./scripts/selfhost.sh, which writes .env with
+# generated secrets and runs `docker compose up -d`.
+#
+#   Dashboard            http://localhost:3000
+#   Resend-compatible API http://localhost:3000/api/resend   (RESEND_BASE_URL)
+#   Native REST API      http://localhost:3000/api/v1
+#   Mailpit (caught mail) http://localhost:8025               (profile "mailpit")
+#
+# Real delivery: point SMTP_* in .env at your relay and drop "mailpit" from
+# COMPOSE_PROFILES. See docs/SELF-HOSTING.md.
+
+name: scribase-mail-selfhost
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scribase_mail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./scripts/selfhost.sh or set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-scribase_mail}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # BullMQ needs noeviction; AOF keeps queued jobs across restarts.
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    profiles: [mailpit]
+    ports:
+      - "${SCRIBASE_MAIL_BIND:-127.0.0.1}:${MAILPIT_PORT:-8025}:8025"
+
+  web:
+    image: ${SCRIBASE_MAIL_IMAGE:-ghcr.io/caelum0x/scribase-mail-studio:latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        IS_CLOUD: "false"
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      NEXT_PUBLIC_IS_CLOUD: "false"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-scribase_mail}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-scribase_mail}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${SCRIBASE_MAIL_BIND:-127.0.0.1}:${SCRIBASE_MAIL_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  postgres:
+  redis:
