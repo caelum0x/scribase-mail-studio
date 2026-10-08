@@ -48,7 +48,12 @@ export function WaitListForm({ userEmail }: WaitListFormProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const submitRequest = api.waitlist.submitRequest.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result?.approved) {
+        toast.success("You're in. Opening your dashboard.");
+        window.location.assign("/dashboard");
+        return;
+      }
       toast.success("Thanks! We'll reach out shortly.");
       form.reset();
     },

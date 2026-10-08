@@ -11,6 +11,10 @@ export default async function WaitListPage() {
     redirect("/login");
   }
 
+  if (!session.user.isWaitlisted) {
+    redirect("/dashboard");
+  }
+
   const userEmail = session.user.email ?? "";
 
   return (
@@ -23,7 +27,7 @@ export default async function WaitListPage() {
           <div>
             <h1 className="text-2xl font-semibold">You're on the waitlist</h1>
             <p className="text-sm text-muted-foreground">
-              Share a bit more context so we can prioritize your access.
+              Tell us what you plan to send. Sign-ups from a work email on a company domain usually get access right away.
             </p>
           </div>
         </div>

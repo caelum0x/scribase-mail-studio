@@ -94,6 +94,18 @@ export const env = createEnv({
     FROM_EMAIL: z.string().optional(),
     ADMIN_EMAIL: z.string().optional(),
     FOUNDER_EMAIL: z.string().optional(),
+    // Cloud only: auto-approve waitlisted sign-ups from business domains with MX
+    AUTO_APPROVE_WAITLIST: z
+      .string()
+      .default("false")
+      .transform((str) => str === "true"),
+    AUTO_APPROVE_DAILY_CAP: z
+      .string()
+      .default("25")
+      .transform((str) => {
+        const n = parseInt(str, 10);
+        return Number.isFinite(n) && n >= 0 ? n : 25;
+      }),
     DISCORD_WEBHOOK_URL: z.string().optional(),
     REDIS_URL: z.string(),
     REDIS_KEY_PREFIX: z.string().default(""),
@@ -184,6 +196,8 @@ export const env = createEnv({
     NEXT_PUBLIC_GIT_SHA: process.env.NEXT_PUBLIC_GIT_SHA,
     ADMIN_EMAIL: process.env.ADMIN_EMAIL,
     FOUNDER_EMAIL: process.env.FOUNDER_EMAIL,
+    AUTO_APPROVE_WAITLIST: process.env.AUTO_APPROVE_WAITLIST,
+    AUTO_APPROVE_DAILY_CAP: process.env.AUTO_APPROVE_DAILY_CAP,
     DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL,
     REDIS_URL: process.env.REDIS_URL,
     REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX,

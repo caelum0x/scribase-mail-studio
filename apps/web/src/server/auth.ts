@@ -13,6 +13,7 @@ import { Provider } from "next-auth/providers/index";
 
 import { sendSignUpEmail } from "~/server/mailer";
 import { env } from "~/env";
+import { tryAutoApproveUser } from "~/server/service/waitlist-auto-approve-service";
 import { db } from "~/server/db";
 
 const GITHUB_OAUTH_ISSUER = "https://github.com/login/oauth";
@@ -278,6 +279,9 @@ export const authOptions: NextAuthOptions = {
           where: { id: user.id },
           data: { isBetaUser: true, isWaitlisted: true },
         });
+        // Business domains with MX may skip the waitlist (cloud, opt-in via
+        // AUTO_APPROVE_WAITLIST). Fails closed: the user stays waitlisted.
+        await tryAutoApproveUser({ id: user.id, email: user.email }, "signup");
       }
     },
   },

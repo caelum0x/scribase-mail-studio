@@ -10,6 +10,7 @@ import {
   waitlistSubmissionSchema,
 } from "~/app/wait-list/schema";
 import { escapeHtml } from "~/server/utils/email-content";
+import { tryAutoApproveUser } from "~/server/service/waitlist-auto-approve-service";
 
 const RATE_LIMIT_WINDOW_SECONDS = 60 * 60 * 6; // 6 hours
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
@@ -37,6 +38,20 @@ export const waitlistRouter = createTRPCRouter({
           code: "INTERNAL_SERVER_ERROR",
           message: "Waitlist notifications are not configured",
         });
+      }
+
+      if (!user.isWaitlisted) {
+        return { ok: true, approved: true as const };
+      }
+
+      // Re-check the account email (never the self-declared domain field):
+      // business domains with MX skip the waitlist when auto-approval is on.
+      const auto = await tryAutoApproveUser(
+        { id: user.id, email: user.email },
+        "waitlist_form",
+      );
+      if (auto.approved) {
+        return { ok: true, approved: true as const };
       }
 
       const redis = getRedis();
@@ -98,6 +113,6 @@ export const waitlistRouter = createTRPCRouter({
         "Waitlist request submitted"
       );
 
-      return { ok: true };
+      return { ok: true, approved: false as const };
     }),
 });

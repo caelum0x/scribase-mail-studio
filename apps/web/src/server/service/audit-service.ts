@@ -71,6 +71,7 @@ export const AuditAction = {
   ADMIN_UNBLOCK: "admin.unblock",
   ADMIN_REVIEW_APPROVED: "admin.review_approved",
   ADMIN_REVIEW_REJECTED: "admin.review_rejected",
+  WAITLIST_AUTO_APPROVED: "admin.waitlist_auto_approved",
 } as const;
 
 export type AuditActionType = (typeof AuditAction)[keyof typeof AuditAction];
