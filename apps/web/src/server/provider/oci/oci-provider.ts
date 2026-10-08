@@ -138,6 +138,7 @@ export class ProviderNotConfiguredError extends Error {
 export class OciEmailProvider implements EmailProvider {
   readonly name = "oci" as const;
   readonly spfRecord = OCI_SPF_RECORD;
+  readonly dkimRecordType = "CNAME" as const;
   readonly region: string;
 
   private readonly config: OciConfig;

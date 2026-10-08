@@ -1,13 +1,33 @@
 import { env } from "~/env";
 import { createOciProviderFromEnv } from "./oci/factory";
+import { createGenericSmtpProviderFromEnv } from "./smtp/factory";
+import { prismaDkimKeyStore } from "./smtp/key-store";
 import type { EmailProvider } from "./types";
 
 export * from "./types";
 
 let provider: EmailProvider | null = null;
 
-/** Returns the configured email provider (Oracle Cloud Email Delivery). */
+/**
+ * Returns the configured email provider: Oracle Cloud Email Delivery (default)
+ * or any SMTP relay with local DKIM signing (EMAIL_PROVIDER=smtp).
+ */
 export function getEmailProvider(): EmailProvider {
+  if (!provider && env.EMAIL_PROVIDER === "smtp") {
+    provider = createGenericSmtpProviderFromEnv(
+      {
+        OCI_REGION: env.OCI_REGION,
+        SMTP_HOST: env.SMTP_HOST,
+        SMTP_PORT: env.SMTP_PORT,
+        SMTP_USER: env.SMTP_USER,
+        SMTP_PASS: env.SMTP_PASS,
+        SMTP_SECURE: env.SMTP_SECURE,
+        SMTP_REQUIRE_TLS: env.SMTP_REQUIRE_TLS,
+        SMTP_SPF_RECORD: env.SMTP_SPF_RECORD,
+      },
+      prismaDkimKeyStore,
+    );
+  }
   if (!provider) {
     provider = createOciProviderFromEnv({
       OCI_REGION: env.OCI_REGION,

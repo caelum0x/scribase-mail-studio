@@ -84,7 +84,7 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
 
   const records: DomainDnsRecord[] = [
     {
-      type: "CNAME",
+      type: getEmailProvider().dkimRecordType ?? "CNAME",
       name: toRelativeHost(dkimFqdn, baseDomain),
       value: domain.dkimRecordValue ?? DKIM_PENDING_VALUE,
       ttl: "Auto",
@@ -454,6 +454,16 @@ export async function createDomain(
       dkimRecordValue: providerDomain.dkim.recordValue,
       dkimStatus: DomainStatus.NOT_STARTED,
       spfDetails: DomainStatus.NOT_STARTED,
+      ...(providerDomain.dkim.privateKey
+        ? {
+            dkimKey: {
+              create: {
+                selector: providerDomain.dkim.selector ?? dkimSelector,
+                privateKey: providerDomain.dkim.privateKey,
+              },
+            },
+          }
+        : {}),
     },
   });
 

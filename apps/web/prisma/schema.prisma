@@ -270,6 +270,18 @@ model Domain {
   sendingEnabled       Boolean         @default(true)
   receivingEnabled     Boolean         @default(false)
   receivedEmails       ReceivedEmail[]
+  dkimKey              DomainDkimKey?
+}
+
+/// Locally generated DKIM signing key (generic SMTP provider only). Kept in a
+/// separate table so domain queries and API responses never include it.
+model DomainDkimKey {
+  id         Int      @id @default(autoincrement())
+  domainId   Int      @unique
+  selector   String
+  privateKey String
+  createdAt  DateTime @default(now())
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
 }
 
 enum ApiPermission {

@@ -10,7 +10,7 @@ import type { DomainStatus } from "@prisma/client";
  * OCI Email Delivery API for domains, DKIM, approved senders and suppressions.
  */
 
-export type ProviderName = "oci";
+export type ProviderName = "oci" | "smtp";
 
 export type SendRawEmailInput = {
   from: string;
@@ -66,8 +66,13 @@ export type ProviderDkimRecord = {
   selector?: string;
   /** Full DNS name of the CNAME, e.g. `sel._domainkey.example.com`. */
   recordName?: string;
-  /** CNAME target supplied by the provider. */
+  /** CNAME target (OCI) or TXT value (generic SMTP provider). */
   recordValue?: string;
+  /**
+   * PEM private key generated locally by providers that sign DKIM
+   * themselves. Only returned by addDomain; stored outside the Domain row.
+   */
+  privateKey?: string;
 };
 
 export type ProviderDomainResult = {
@@ -193,6 +198,8 @@ export interface EmailProvider {
   readonly region: string;
   /** SPF value customers must publish on their sending domain. */
   readonly spfRecord: string;
+  /** DNS record type customers publish for DKIM. */
+  readonly dkimRecordType: "CNAME" | "TXT";
 
   sendRawEmail(input: SendRawEmailInput): Promise<SendRawEmailResult>;
 

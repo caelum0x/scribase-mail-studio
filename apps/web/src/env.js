@@ -49,6 +49,12 @@ export const env = createEnv({
     OCI_PRIVATE_KEY_PASSPHRASE: z.string().optional(),
     // OCI Logging log group for Email Delivery service logs (delivery events)
     OCI_LOG_GROUP_NAME: z.string().default("scribase-mail"),
+    // Sending provider: "oci" (OCI Email Delivery, default) or "smtp" (any
+    // SMTP relay, DKIM signed locally, domains verified by DNS lookup)
+    EMAIL_PROVIDER: z.enum(["oci", "smtp"]).default("oci"),
+    SMTP_SECURE: z.string().optional(),
+    SMTP_REQUIRE_TLS: z.string().optional(),
+    SMTP_SPF_RECORD: z.string().optional(),
     // SMTP relay used for sending (OCI Email Delivery SMTP credentials)
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.string().default("587"),
@@ -212,6 +218,10 @@ export const env = createEnv({
     DODO_PRODUCT_ID_SCALE: process.env.DODO_PRODUCT_ID_SCALE,
     DODO_USAGE_METER_ID: process.env.DODO_USAGE_METER_ID,
     DODO_USAGE_EVENT_NAME: process.env.DODO_USAGE_EVENT_NAME,
+    EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+    SMTP_SECURE: process.env.SMTP_SECURE,
+    SMTP_REQUIRE_TLS: process.env.SMTP_REQUIRE_TLS,
+    SMTP_SPF_RECORD: process.env.SMTP_SPF_RECORD,
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PUBLIC_HOST: process.env.SMTP_PUBLIC_HOST,

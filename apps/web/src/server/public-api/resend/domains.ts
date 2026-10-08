@@ -100,7 +100,7 @@ function mapDnsRecord(record: DomainDnsRecord): ResendDomainRecord {
 
   // Determine the Resend `record` label from the type and context.
   let label = "CUSTOM";
-  if (record.type === "CNAME" && record.name.includes("_domainkey")) {
+  if (record.name.includes("_domainkey")) {
     label = "DKIM";
   } else if (record.type === "TXT" && record.value.includes("v=spf1")) {
     label = "SPF";
