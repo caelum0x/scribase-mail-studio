@@ -16,6 +16,7 @@ import { logger } from "../logger/log";
 import { createWorkerHandler, TeamJob } from "../queue/bullmq-context";
 import { LimitService } from "./limit-service";
 import { gateOutgoingEmail } from "./send-gate-service";
+import { AddressVerificationService } from "./address-verification-service";
 import {
   BUILT_IN_CONTACT_VARIABLES,
   replaceContactVariables,
@@ -465,6 +466,57 @@ export async function executeEmail(job: QueueEmailJob) {
       }
     }
 
+    // Pre-send address verification (reacherhq/check-if-email-exists): drop
+    // recipients confirmed undeliverable before spending a send credit.
+    // Fails open — if the verifier is disabled/unreachable, every recipient
+    // comes back unblocked and the send proceeds unchanged.
+    const addressCheck = await AddressVerificationService.checkAddresses(
+      email.to,
+    );
+    const deliverableTo = email.to.filter(
+      (addr) => !addressCheck[addr.toLowerCase().trim()]?.blocked,
+    );
+    const invalidTo = email.to.filter(
+      (addr) => addressCheck[addr.toLowerCase().trim()]?.blocked,
+    );
+    const riskyTo = email.to.filter(
+      (addr) => addressCheck[addr.toLowerCase().trim()]?.verdict === "risky",
+    );
+
+    if (riskyTo.length > 0) {
+      logger.info(
+        { emailId: email.id, riskyTo },
+        `[EmailQueueService]: Pre-send verification flagged risky recipient(s) (sending anyway)`,
+      );
+    }
+
+    if (invalidTo.length > 0) {
+      logger.info(
+        { emailId: email.id, invalidTo },
+        `[EmailQueueService]: Pre-send verification rejected recipient(s) as undeliverable`,
+      );
+    }
+
+    if (deliverableTo.length === 0) {
+      await db.emailEvent.create({
+        data: {
+          emailId: email.id,
+          status: "REJECTED",
+          data: {
+            error:
+              "All recipients failed pre-send address verification (reacher: invalid)",
+            invalidTo,
+          },
+          teamId: email.teamId,
+        },
+      });
+      await db.email.update({
+        where: { id: email.id },
+        data: { latestStatus: "REJECTED" },
+      });
+      return;
+    }
+
     const provider = getEmailProvider();
     const messageId = buildMessageId(email.id, email.from);
 
@@ -481,7 +533,7 @@ export async function executeEmail(job: QueueEmailJob) {
       : undefined;
 
     const result = await provider.sendRawEmail({
-      to: email.to,
+      to: deliverableTo,
       from: email.from,
       subject,
       replyTo: email.replyTo ?? undefined,

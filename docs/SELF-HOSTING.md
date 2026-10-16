@@ -75,6 +75,27 @@ behaviour only (no provider log polling). `EMAIL_PROVIDER="oci"` uses Oracle Clo
 Email Delivery with managed DKIM, the suppression list and delivery logs; see the
 OCI section of `.env.selfhost.example` and `deploy/DEPLOY.md`.
 
+## Pre-send address verification (optional)
+
+Every send checks each recipient against [`reacherhq/check-if-email-exists`](https://github.com/reacherhq/check-if-email-exists)
+(MIT licensed, self-hosted, no SaaS fee) right before it reaches the relay.
+Addresses confirmed undeliverable are dropped before a send credit is spent;
+if the verifier is disabled, unset, or unreachable the check fails open and
+every recipient still sends (it never silently drops a legitimate send).
+
+```sh
+docker compose --profile reacher up -d
+```
+
+then set in `.env`:
+
+```sh
+REACHER_API_URL="http://reacher:8080"
+```
+
+See `REACHER_*` in `.env.selfhost.example` for the timeout and which
+`is_reachable` verdicts to block (default: `invalid` only).
+
 ## Operations
 
 ```sh

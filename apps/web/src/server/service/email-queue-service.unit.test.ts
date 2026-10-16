@@ -6,6 +6,7 @@ const {
   mockProcessEmailEvent,
   mockCheckEmailLimit,
   mockGate,
+  mockCheckAddresses,
 } = vi.hoisted(() => ({
     mockGate: vi.fn(),
     mockDb: {
@@ -20,6 +21,7 @@ const {
     },
     mockProcessEmailEvent: vi.fn(),
     mockCheckEmailLimit: vi.fn(),
+    mockCheckAddresses: vi.fn(),
   }));
 
 vi.mock("~/env", () => ({
@@ -41,6 +43,9 @@ vi.mock("~/server/service/limit-service", () => ({
 }));
 vi.mock("~/server/service/send-gate-service", () => ({
   gateOutgoingEmail: mockGate,
+}));
+vi.mock("~/server/service/address-verification-service", () => ({
+  AddressVerificationService: { checkAddresses: mockCheckAddresses },
 }));
 vi.mock("~/server/redis", () => ({
   BULL_PREFIX: "test",
@@ -99,6 +104,9 @@ describe("executeEmail", () => {
     mockCheckEmailLimit.mockResolvedValue({ isLimitReached: false });
     mockGate.mockResolvedValue("send");
     mockProvider.ensureApprovedSender.mockResolvedValue({ created: false });
+    mockCheckAddresses.mockResolvedValue({
+      "user@example.com": { blocked: false, verdict: "unverified" },
+    });
   });
 
   it("sends through the provider and records the SENT event", async () => {
@@ -255,6 +263,52 @@ describe("executeEmail", () => {
 
     expect(mockGate).not.toHaveBeenCalled();
     expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects without calling the provider when the recipient fails pre-send address verification", async () => {
+    mockCheckAddresses.mockResolvedValue({
+      "user@example.com": { blocked: true, verdict: "invalid" },
+    });
+
+    await executeEmail(job());
+
+    expect(mockCheckAddresses).toHaveBeenCalledWith(["user@example.com"]);
+    expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
+    expect(mockDb.emailEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        emailId: "em_1",
+        status: "REJECTED",
+        data: expect.objectContaining({
+          invalidTo: ["user@example.com"],
+        }),
+      }),
+    });
+    expect(mockDb.email.update).toHaveBeenCalledWith({
+      where: { id: "em_1" },
+      data: { latestStatus: "REJECTED" },
+    });
+  });
+
+  it("sends only to the deliverable recipients when some addresses fail verification", async () => {
+    mockDb.email.findUnique.mockResolvedValue({
+      ...email,
+      to: ["good@example.com", "bad@example.com"],
+    });
+    mockCheckAddresses.mockResolvedValue({
+      "good@example.com": { blocked: false, verdict: "safe" },
+      "bad@example.com": { blocked: true, verdict: "invalid" },
+    });
+    mockProvider.sendRawEmail.mockResolvedValue({
+      messageId: "em_1@acme.test",
+      accepted: ["good@example.com"],
+      rejected: [],
+    });
+
+    await executeEmail(job());
+
+    const input = mockProvider.sendRawEmail.mock.calls[0]![0];
+    expect(input.to).toEqual(["good@example.com"]);
+    expect(mockDb.emailEvent.create).not.toHaveBeenCalled();
   });
 
   it("does not mark FAILED when only the bookkeeping after send fails", async () => {

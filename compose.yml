@@ -48,6 +48,20 @@ services:
     ports:
       - "${SCRIBASE_MAIL_BIND:-127.0.0.1}:${MAILPIT_PORT:-8025}:8025"
 
+  # Pre-send address verification (reacherhq/check-if-email-exists). Opt-in:
+  # needs outbound port 25 open to do a real SMTP handshake. Start with
+  # `docker compose --profile reacher up -d` and set REACHER_API_URL to
+  # http://reacher:8080 in .env.
+  reacher:
+    image: reacherhq/backend:latest
+    restart: unless-stopped
+    profiles: [reacher]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080 || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   web:
     image: ${SCRIBASE_MAIL_IMAGE:-ghcr.io/caelum0x/scribase-mail-studio:latest}
     build:

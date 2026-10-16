@@ -142,6 +142,24 @@ export const env = createEnv({
       .string()
       .optional()
       .transform((str) => (str ? parseInt(str, 10) : undefined)),
+    // Pre-send address verification via a self-hosted reacherhq/check-if-email-exists
+    // sidecar (REST API). Unset URL = feature is a no-op (fails open).
+    REACHER_ENABLED: z
+      .string()
+      .default("true")
+      .transform((str) => str !== "false"),
+    REACHER_API_URL: z.string().url().optional(),
+    REACHER_API_KEY: z.string().optional(),
+    REACHER_TIMEOUT_MS: z
+      .string()
+      .default("4000")
+      .transform((str) => {
+        const n = parseInt(str, 10);
+        return Number.isFinite(n) && n > 0 ? n : 4000;
+      }),
+    // Comma-separated reacher `is_reachable` verdicts that block a send
+    // ("invalid" only by default — "risky"/"unknown" are logged, not blocked).
+    REACHER_BLOCK_VERDICTS: z.string().default("invalid"),
   },
 
   /**
@@ -230,6 +248,11 @@ export const env = createEnv({
     EMAIL_CLEANUP_DAYS: process.env.EMAIL_CLEANUP_DAYS,
     INBOUND_INTERNAL_SECRET: process.env.INBOUND_INTERNAL_SECRET,
     INBOUND_MX_HOSTNAME: process.env.INBOUND_MX_HOSTNAME,
+    REACHER_ENABLED: process.env.REACHER_ENABLED,
+    REACHER_API_URL: process.env.REACHER_API_URL,
+    REACHER_API_KEY: process.env.REACHER_API_KEY,
+    REACHER_TIMEOUT_MS: process.env.REACHER_TIMEOUT_MS,
+    REACHER_BLOCK_VERDICTS: process.env.REACHER_BLOCK_VERDICTS,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
