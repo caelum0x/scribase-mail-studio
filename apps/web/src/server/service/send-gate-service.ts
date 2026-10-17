@@ -39,6 +39,8 @@ export type GateInput = {
   headers?: Record<string, string>;
   unsubUrl?: string;
   isBulk: boolean;
+  /** Recipient addresses, used only to detect a self-test send (see below). */
+  to?: string[];
   now?: Date;
 };
 
@@ -107,6 +109,29 @@ export async function needsFirstSendsReview(
     );
   }
   return required;
+}
+
+/**
+ * True when every recipient is an existing member of the sending team, i.e.
+ * this can only be the team sending to its own inbox ("does this work?" -
+ * DEPLOY.md's own smoke test sends `to: "<you>"`). Such a send cannot reach a
+ * third-party mailbox, so it carries none of the reputation/abuse risk the
+ * first-sends review exists to catch; content screening still runs
+ * regardless. Fails closed: no recipients, or any non-member recipient,
+ * means this is not a self-test send.
+ */
+async function isSelfTestSend(teamId: number, to: string[]): Promise<boolean> {
+  if (to.length === 0) return false;
+  const teamUsers = await db.teamUser.findMany({
+    where: { teamId },
+    include: { user: true },
+  });
+  const memberEmails = new Set(
+    teamUsers
+      .map((tu) => tu.user.email?.toLowerCase().trim())
+      .filter((e): e is string => Boolean(e)),
+  );
+  return to.every((addr) => memberEmails.has(addr.toLowerCase().trim()));
 }
 
 function findingsJson(verdict: ScreeningVerdict): Prisma.InputJsonValue {
@@ -246,7 +271,8 @@ export async function gateOutgoingEmail(
   const reason: EmailReviewReason | null =
     verdict.action === "hold"
       ? "CONTENT"
-      : (await needsFirstSendsReview(input.email.teamId, now))
+      : (await needsFirstSendsReview(input.email.teamId, now)) &&
+          !(await isSelfTestSend(input.email.teamId, input.to ?? []))
         ? "FIRST_SENDS"
         : null;
 

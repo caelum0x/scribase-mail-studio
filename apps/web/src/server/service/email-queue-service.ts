@@ -456,6 +456,7 @@ export async function executeEmail(job: QueueEmailJob) {
         headers: customHeaders,
         unsubUrl,
         isBulk: Boolean(isBulk),
+        to: email.to,
       });
       if (decision !== "send") {
         logger.info(

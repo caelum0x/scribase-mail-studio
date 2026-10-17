@@ -24,6 +24,7 @@ const {
     emailReview: { upsert: vi.fn(), count: vi.fn() },
     dailyEmailUsage: { aggregate: vi.fn() },
     team: { updateMany: vi.fn() },
+    teamUser: { findMany: vi.fn() },
   },
   mockRedis: { set: vi.fn() },
   mockScreen: vi.fn(),
@@ -126,6 +127,7 @@ describe("gateOutgoingEmail", () => {
     mockDb.$transaction.mockResolvedValue([]);
     mockDb.dailyEmailUsage.aggregate.mockResolvedValue({ _sum: { sent: 0 } });
     mockDb.emailReview.count.mockResolvedValue(3);
+    mockDb.teamUser.findMany.mockResolvedValue([]);
     mockRedis.set.mockResolvedValue("OK");
     mockTeam.current = trustedTeam();
   });
@@ -210,6 +212,44 @@ describe("gateOutgoingEmail", () => {
       email,
       attachments: [],
       isBulk: false,
+      now,
+    });
+    expect(decision).toBe("held");
+    expect(mockDb.emailReview.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ reason: "FIRST_SENDS" }),
+      }),
+    );
+  });
+
+  it("lets a new team's self-test send through (recipient is a team member)", async () => {
+    mockScreen.mockResolvedValue(allow);
+    mockTeam.current = newTeam();
+    mockDb.teamUser.findMany.mockResolvedValue([
+      { user: { email: "Founder@Scribase.com" } },
+    ]);
+    const decision = await gateOutgoingEmail({
+      email,
+      attachments: [],
+      isBulk: false,
+      to: ["founder@scribase.com"],
+      now,
+    });
+    expect(decision).toBe("send");
+    expect(mockDb.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("still holds a new team's send to a non-member recipient", async () => {
+    mockScreen.mockResolvedValue(allow);
+    mockTeam.current = newTeam();
+    mockDb.teamUser.findMany.mockResolvedValue([
+      { user: { email: "founder@scribase.com" } },
+    ]);
+    const decision = await gateOutgoingEmail({
+      email,
+      attachments: [],
+      isBulk: false,
+      to: ["founder@scribase.com", "customer@example.com"],
       now,
     });
     expect(decision).toBe("held");
