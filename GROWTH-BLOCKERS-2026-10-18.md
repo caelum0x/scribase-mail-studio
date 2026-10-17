@@ -44,25 +44,19 @@ queries, matching an existing call pattern already used elsewhere
 `pnpm install && pnpm test:web:unit` here once the Mac's disk/pnpm situation is
 sorted, to get this into CI-verified state.
 
-**Deploy status:** rebuilding the `scribase-mail-web` image on `box` to ship this
-live. The box is under heavy resource contention (load avg ~10, ~370MB free RAM,
-swapping) from the other products it hosts, so the Docker build is taking far
-longer than DEPLOY.md implies (first build pass took ~48 min; a second pass, after
-correcting `GIT_SHA` in `deploy/.env` from the stale `ce43829` to `3c93c96` so the
-image is tagged correctly, was still running past the 20-minute mark when this file
-was written). The build is NOT blocked, just slow — it was left running
-server-side. **To finish the deploy once the build completes:**
-
-```sh
-ssh box 'docker images | grep "scribase-mail:3c93c96"'   # confirm the new image exists
-ssh box 'cd /opt/scribase-mail && docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env up -d web'
-ssh box 'curl -fsS http://127.0.0.1:4350/api/health'      # expect {"data":"Healthy"}
-curl -fsS https://mail.scribase.com/api/health             # same, through Caddy
-ssh box 'docker builder prune -f'                          # reclaim build cache (grew to ~11GB during this build)
-```
-
-If the build is still running, just re-run the first command later — it isn't
-tied to any session and won't be lost.
+**Deploy status: LIVE.** Rebuilt and deployed `scribase-mail-web` on `box`
+(image `scribase-mail:3c93c96`, `deploy/.env` `GIT_SHA` updated from the stale
+`ce43829` to `3c93c96`). The box was under heavy resource contention (load avg
+~10, ~370MB free RAM, swapping) from the other products it hosts, so the two
+Docker builds needed (one before the `GIT_SHA` fix, one after) took ~48 min and
+~25 min respectively — far longer than DEPLOY.md implies, but not blocked, just
+slow. Confirmed after `up -d web`:
+- `docker logs scribase-mail-web` — migrations deployed, worker already
+  processing real email events (`DeliveryLogPollJob` running) for `teamId:1`.
+- `curl http://127.0.0.1:4350/api/health` and `curl https://mail.scribase.com/api/health`
+  both `{"data":"Healthy"}`.
+- `docker builder prune -f` reclaimed the ~11GB of build cache; `/` back to 20G
+  free (80% used), same as before this work started.
 
 ## Confirmed NOT broken (checked, do not re-investigate)
 
