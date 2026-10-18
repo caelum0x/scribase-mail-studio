@@ -25,6 +25,7 @@ import { Switch } from "@usesend/ui/src/switch";
 import DeleteDomain from "./delete-domain";
 import SendTestMail from "./send-test-mail";
 import ApprovedSenders from "./approved-senders";
+import DeliverabilityInsights from "./deliverability-insights";
 import { Button } from "@usesend/ui/src/button";
 import Link from "next/link";
 import { toast } from "@usesend/ui/src/toaster";
@@ -167,6 +168,9 @@ export default function DomainItemPage({
               </TableBody>
             </Table>
           </div>
+          {domainQuery.data ? (
+            <DeliverabilityInsights domainId={domainQuery.data.id} />
+          ) : null}
           {domainQuery.data ? (
             <ApprovedSenders
               domainId={domainQuery.data.id}
