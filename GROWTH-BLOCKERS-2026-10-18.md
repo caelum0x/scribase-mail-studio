@@ -123,3 +123,75 @@ slow. Confirmed after `up -d web`:
    found in either `apps/marketing` or `apps/web`. There's currently no way to
    measure landing-page → signup → paid conversion. Not a code "bug" but worth
    wiring up so future growth work on this product has numbers to act on.
+
+## 2026-10-18 (later pass): sender-reputation gap — built, pushed, blocked on deploy only
+
+**Competitive gap verified (web search):** Resend added an Email Metrics API plus
+a basic account-level "Deliverability Insights" dashboard in 2026, but it is
+engagement/metrics data, not DNS-policy auditing, and reviewers still flag it as
+shallower than dedicated deliverability tools. useSend (the direct OSS base this
+product forks) has no reputation dashboard at all — it only relays SES
+bounce/complaint events into suppression lists; no DMARC/SPF/DKIM policy checks,
+no per-domain health panel. The gap stands, especially against the direct fork
+base.
+
+**What was found before building anything new:** a real, already-tested backend
+subsystem for exactly this gap already existed and was dormant —
+`deliverability-insights-service.ts` (DMARC policy/rua check, SPF+OCI-relay
+check, DKIM status, return-path, tracking subdomain, 30-day bounce/complaint
+rate with warning/error thresholds, 10 passing unit tests) plus a
+`domain.getDeliverabilityInsights` tRPC query exposing it — but no page anywhere
+called that query. It was built, tested, and wired into the API, then never
+surfaced. Separately, `reputation-guard-service.ts`/`reputation-guard-job.ts`
+(account-wide bounce/complaint auto-pause with loud email notification to the
+team and admin) was already live since 2026-10-07 and did not need touching.
+
+**Built:** a "Deliverability & sender reputation" panel on the domain detail
+page (`apps/web/src/app/(dashboard)/domains/[domainId]/deliverability-insights.tsx`,
+wired into `page.tsx`) that calls the existing `getDeliverabilityInsights` query
+and renders every check (DMARC/SPF/DKIM/return-path/tracking, severity-sorted)
+plus 30-day sent/bounce/complaint stats. A fetch failure shows a visible
+destructive-styled error banner with the tRPC error message — never silently
+hidden, consistent with this session's two earlier silent-failure fixes on this
+product.
+
+**Tests: real suite run, not just syntax check** (closes the gap noted above
+from the earlier pass in this file, where only an isolated TS parse was
+possible). Root cause of the earlier broken `node_modules`: `pnpm store status`
+confirmed corrupted/modified store entries. Fixed per instructions (restored
+the store rather than switching package managers): freed disk via
+`docker builder prune -af` + `docker image prune -af` (reclaimed ~19GB, this
+Mac's disk was the real blocker, not pnpm itself), then
+`pnpm install --filter web... --force` to re-fetch the corrupted entries, then
+`prisma generate`. Result: `vitest run -c vitest.unit.config.ts` — **576/576
+passed** (57 files, includes the 10 pre-existing deliverability-insights tests);
+`vitest run -c vitest.trpc.config.ts` — **39/39 passed**; `tsc --noEmit -p .` —
+0 errors. No new tests were added because no new business logic was written —
+this change is a UI wire-up of an already-tested service; the existing 10 unit
+tests already cover every severity branch the panel renders.
+
+**Commit:** `9c1af8b` — `feat(domain): surface per-domain deliverability and
+sender-reputation insights`. Pushed directly to `origin/main` (confirmed via
+`git log origin/main -1` after push; the previously-pushed local branch had
+been tracking `origin/main` under the name `scribase-mail`, so the push target
+had to be corrected to `scribase-mail-studio` on GitHub's `main` branch
+specifically — done, and the stray duplicate `scribase-mail` remote branch this
+created was deleted immediately after).
+
+**Deploy: BLOCKED, owner action needed.** `ssh box` (`130.61.180.42`, the only
+documented deploy path in `deploy/DEPLOY.md` — tar/scp the source, build+restart
+the `scribase-mail-web` container there) gets `Connection refused` on port 22,
+confirmed repeatedly over several minutes. This is box-specific, not an
+environment-wide network block: the same sandbox reached `railyard-box`
+(`130.61.113.116`) on port 22 immediately, and reached `mail.scribase.com` on
+443 fine (`curl https://mail.scribase.com/api/health` → `{"data":"Healthy"}`,
+confirming the *currently live* build is still up and unaffected). sshd on
+`box` itself appears down or its firewall now excludes this session's egress
+IP — likely needs a console/OOB reboot or firewall-rule check on the Oracle
+Cloud side (owner-only: OCI Console access). **Code is on `origin/main`,
+tested, ready to deploy; health is unaffected (old build still serves
+`mail.scribase.com` fine); the only remaining step is re-establishing SSH to
+`box` and running `deploy/DEPLOY.md` steps 2–6** (or equivalently:
+`git pull && docker compose -f deploy/compose.scribase-mail.yml --env-file
+deploy/.env build web && up -d web`, bump `GIT_SHA=9c1af8b` in `deploy/.env`
+first). Nothing else in this pass depends on this — flagging and moving on.
