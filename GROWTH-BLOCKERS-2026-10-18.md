@@ -195,3 +195,54 @@ tested, ready to deploy; health is unaffected (old build still serves
 `git pull && docker compose -f deploy/compose.scribase-mail.yml --env-file
 deploy/.env build web && up -d web`, bump `GIT_SHA=9c1af8b` in `deploy/.env`
 first). Nothing else in this pass depends on this — flagging and moving on.
+
+## Third gap pass: dedicated sending pools wired into real delivery (same day, later)
+
+**Gap vs Resend/useSend:** Resend sells dedicated IPs so a high-volume sender's
+reputation is isolated from every other customer on the shared pool; useSend
+(the fork base) has nothing like it.
+
+**What was found before building anything new:** another fully dormant
+subsystem, same shape as `deliverability-insights-service.ts` above —
+`Team.sendingPool` (DB column), `team.setSendingPool` / `team.getSendingPool`
+(admin-only tRPC, already recording `AuditAction.SENDING_POOL_CHANGED`), and
+`multi-region-service.ts`'s `getSmtpCredentialsForPool()` (reads
+`OCI_SMTP_POOL_<NAME>_HOST/USER/PASS`, already unit-tested) all existed and
+compiled, but nothing ever called `getSmtpCredentialsForPool` from the actual
+send path, and no page in the app called `setSendingPool`/`getSendingPool`.
+Setting a pool persisted to the database and changed nothing about where mail
+actually sent.
+
+**Built:** wired the existing pieces together, no new algorithm. Both
+`OciEmailProvider` (the live default) and `GenericSmtpProvider` (self-host)
+now resolve a per-pool nodemailer transport at send time (cached per pool
+name) and fall back to the shared relay when a pool isn't provisioned,
+matching `getSmtpCredentialsForPool`'s existing fallback. `email-queue-service.ts`
+reads the sending team's pool right before each send. Added an admin-only
+"Dedicated sending pool" card to Settings -> Team
+(`apps/web/src/app/(dashboard)/settings/team/sending-pool-settings.tsx`).
+
+**Tests:** 44 new/updated unit + trpc tests across
+`oci-provider.unit.test.ts`, `smtp-provider.unit.test.ts`, a new
+`smtp/factory.unit.test.ts`, `email-queue-service.unit.test.ts`, and a new
+`team-sending-pool.trpc.test.ts`. Full `vitest run -c vitest.unit.config.ts` -
+**591/591 passed** (58 files); `vitest run -c vitest.trpc.config.ts` -
+**43/43 passed**; `tsc --noEmit --pretty false` - 0 errors.
+
+**Commit:** `295c033` - `feat(domain): wire dedicated sending pools into
+actual email delivery`. Pushed to `origin/main`, confirmed matching via
+`git ls-remote origin main`.
+
+**Deploy: LIVE.** `ssh box` worked this time (the 2026-10-18 fail2ban lockout
+had already cleared). Rebuilt `scribase-mail:295c033`
+(`docker compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env
+build web`, ~22 min - box is still slow/contended, not blocked) after bumping
+`GIT_SHA` in `deploy/.env`, then `up -d web`. Verified:
+`docker inspect scribase-mail-web` -> image `scribase-mail:295c033`; grepping
+the running container's built `.next` output for `"Dedicated sending pool"`
+and `setSendingPool` found both in the server and client bundles for
+`/settings/team`; `curl https://mail.scribase.com/api/health` and the local
+`http://127.0.0.1:4350/api/health` both -> `{"data":"Healthy"}`;
+`curl -o /dev/null -w '%{http_code}' https://mail.scribase.com/settings/team`
+-> 200. Freed disk before and after (`docker builder prune -f`, removed the
+two oldest `scribase-mail` images), `/` back to 19G free (81% used).
