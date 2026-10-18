@@ -2,6 +2,7 @@
 
 import InviteTeamMember from "./invite-team-member";
 import TeamMembersList from "./team-members-list";
+import SendingPoolSettings from "./sending-pool-settings";
 
 export default function TeamsPage() {
   return (
@@ -10,6 +11,7 @@ export default function TeamsPage() {
         <InviteTeamMember />
       </div>
       <TeamMembersList />
+      <SendingPoolSettings />
     </div>
   );
 }

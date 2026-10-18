@@ -1,5 +1,5 @@
 import { DomainStatus } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/server/logger/log", () => ({
   logger: {
@@ -177,6 +177,106 @@ describe("OciEmailProvider.sendRawEmail", () => {
 
     const error = await provider.sendRawEmail(baseSend).catch((e) => e);
     expect(error.message).not.toContain("smtp-pass");
+  });
+});
+
+describe("OciEmailProvider.sendRawEmail dedicated sending pools", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  function createProviderWithPoolSupport() {
+    const api = createApi();
+    const defaultTransport = createTransport();
+    const poolTransport = createTransport();
+    const createPoolTransport = vi.fn(() => poolTransport);
+    const provider = new OciEmailProvider({
+      config,
+      api: api as unknown as OciEmailApi,
+      transport: defaultTransport as never,
+      sleep: async () => undefined,
+      createPoolTransport: createPoolTransport as never,
+    });
+    return { provider, defaultTransport, poolTransport, createPoolTransport };
+  }
+
+  it("sends through the shared relay when no pool is requested", async () => {
+    const { provider, defaultTransport, poolTransport } =
+      createProviderWithPoolSupport();
+    defaultTransport.sendMail.mockResolvedValue({
+      messageId: "<em_1@acme.test>",
+      accepted: ["user@example.com"],
+      rejected: [],
+    });
+
+    await provider.sendRawEmail(baseSend);
+
+    expect(defaultTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(poolTransport.sendMail).not.toHaveBeenCalled();
+  });
+
+  it("sends through the dedicated pool's transport when provisioned", async () => {
+    process.env.OCI_SMTP_POOL_HIGHVOL_HOST = "dedicated-smtp.oci.com";
+    process.env.OCI_SMTP_POOL_HIGHVOL_USER = "pool-user";
+    process.env.OCI_SMTP_POOL_HIGHVOL_PASS = "pool-pass";
+
+    const { provider, defaultTransport, poolTransport, createPoolTransport } =
+      createProviderWithPoolSupport();
+    poolTransport.sendMail.mockResolvedValue({
+      messageId: "<em_1@acme.test>",
+      accepted: ["user@example.com"],
+      rejected: [],
+    });
+
+    await provider.sendRawEmail({ ...baseSend, sendingPool: "highvol" });
+
+    expect(poolTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(defaultTransport.sendMail).not.toHaveBeenCalled();
+    expect(createPoolTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "dedicated-smtp.oci.com",
+        user: "pool-user",
+        pass: "pool-pass",
+      }),
+    );
+  });
+
+  it("reuses the same pool transport across sends instead of recreating it", async () => {
+    process.env.OCI_SMTP_POOL_HIGHVOL_HOST = "dedicated-smtp.oci.com";
+    process.env.OCI_SMTP_POOL_HIGHVOL_USER = "pool-user";
+    process.env.OCI_SMTP_POOL_HIGHVOL_PASS = "pool-pass";
+
+    const { provider, poolTransport, createPoolTransport } =
+      createProviderWithPoolSupport();
+    poolTransport.sendMail.mockResolvedValue({
+      messageId: "<em_1@acme.test>",
+      accepted: ["user@example.com"],
+      rejected: [],
+    });
+
+    await provider.sendRawEmail({ ...baseSend, sendingPool: "highvol" });
+    await provider.sendRawEmail({ ...baseSend, sendingPool: "highvol" });
+
+    expect(createPoolTransport).toHaveBeenCalledTimes(1);
+    expect(poolTransport.sendMail).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to the shared relay when the requested pool has no credentials provisioned", async () => {
+    const { provider, defaultTransport, poolTransport, createPoolTransport } =
+      createProviderWithPoolSupport();
+    defaultTransport.sendMail.mockResolvedValue({
+      messageId: "<em_1@acme.test>",
+      accepted: ["user@example.com"],
+      rejected: [],
+    });
+
+    await provider.sendRawEmail({ ...baseSend, sendingPool: "unprovisioned" });
+
+    expect(defaultTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(poolTransport.sendMail).not.toHaveBeenCalled();
+    expect(createPoolTransport).not.toHaveBeenCalled();
   });
 });
 

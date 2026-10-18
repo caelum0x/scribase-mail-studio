@@ -1,5 +1,5 @@
 import { DomainStatus } from "@prisma/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderSendError } from "../types";
 import {
   GenericSmtpProvider,
@@ -194,6 +194,98 @@ describe("GenericSmtpProvider", () => {
     const { provider } = setup();
     expect(await provider.listSuppressions(new Date())).toEqual([]);
     expect(await provider.listDeliveryEvents(new Date(), new Date())).toEqual({ events: [], truncated: false });
+  });
+});
+
+describe("GenericSmtpProvider dedicated sending pools", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  function setupWithPoolSupport() {
+    const defaultTransport = {
+      sendMail: vi.fn().mockResolvedValue({
+        accepted: ["to@acme.com"],
+        rejected: [],
+        response: "250 OK",
+        messageId: "<m1@acme.com>",
+      }),
+      verify: vi.fn().mockResolvedValue(true),
+    };
+    const poolTransport = {
+      sendMail: vi.fn().mockResolvedValue({
+        accepted: ["to@acme.com"],
+        rejected: [],
+        response: "250 OK",
+        messageId: "<m1@acme.com>",
+      }),
+      verify: vi.fn().mockResolvedValue(true),
+    };
+    const createPoolTransport = vi.fn(() => poolTransport);
+    const keyStore: DkimKeyStore = {
+      getSigningKey: vi.fn().mockResolvedValue(null),
+    };
+    const provider = new GenericSmtpProvider({
+      config,
+      transport: defaultTransport,
+      keyStore,
+      resolveTxt: vi.fn(),
+      generateKeyPair: () => keys,
+      createPoolTransport,
+    });
+    return { provider, defaultTransport, poolTransport, createPoolTransport };
+  }
+
+  const send = {
+    from: "Acme <hello@acme.com>",
+    to: ["to@acme.com"],
+    subject: "Hi",
+    html: "<p>Hi</p>",
+    messageId: "m1@acme.com",
+  };
+
+  it("sends through the shared relay when no pool is requested", async () => {
+    const { provider, defaultTransport, poolTransport } =
+      setupWithPoolSupport();
+
+    await provider.sendRawEmail(send);
+
+    expect(defaultTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(poolTransport.sendMail).not.toHaveBeenCalled();
+  });
+
+  it("sends through the dedicated pool's transport when provisioned", async () => {
+    process.env.OCI_SMTP_POOL_HIGHVOL_HOST = "dedicated-smtp.example.net";
+    process.env.OCI_SMTP_POOL_HIGHVOL_USER = "pool-user";
+    process.env.OCI_SMTP_POOL_HIGHVOL_PASS = "pool-pass";
+
+    const { provider, defaultTransport, poolTransport, createPoolTransport } =
+      setupWithPoolSupport();
+
+    await provider.sendRawEmail({ ...send, sendingPool: "highvol" });
+
+    expect(poolTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(defaultTransport.sendMail).not.toHaveBeenCalled();
+    expect(createPoolTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "dedicated-smtp.example.net",
+        user: "pool-user",
+        pass: "pool-pass",
+      }),
+    );
+  });
+
+  it("falls back to the shared relay when the requested pool has no credentials provisioned", async () => {
+    const { provider, defaultTransport, poolTransport, createPoolTransport } =
+      setupWithPoolSupport();
+
+    await provider.sendRawEmail({ ...send, sendingPool: "unprovisioned" });
+
+    expect(defaultTransport.sendMail).toHaveBeenCalledTimes(1);
+    expect(poolTransport.sendMail).not.toHaveBeenCalled();
+    expect(createPoolTransport).not.toHaveBeenCalled();
   });
 });
 

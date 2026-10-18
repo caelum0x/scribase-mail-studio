@@ -63,16 +63,22 @@ export function createOciLoggingApis(config: OciConfig): {
   return { logging, logSearch };
 }
 
-export function createSmtpTransport(config: OciConfig): SmtpTransport | null {
-  if (!isSmtpConfigured(config)) {
-    return null;
-  }
+export type SmtpTransportCredentials = {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+};
 
-  const { host, port, user, pass } = config.smtp;
+/** Shared SMTP transport settings for both the default relay and any
+ * dedicated sending pool: 465 = implicit TLS, 587/25 = STARTTLS (required). */
+export function createSmtpTransportFromCredentials(
+  creds: SmtpTransportCredentials,
+): SmtpTransport {
+  const { host, port, user, pass } = creds;
   return nodemailer.createTransport({
     host,
     port,
-    // 465 = implicit TLS, 587/25 = STARTTLS (required).
     secure: port === 465,
     requireTLS: port !== 465,
     auth: { user, pass },
@@ -81,12 +87,28 @@ export function createSmtpTransport(config: OciConfig): SmtpTransport | null {
   });
 }
 
+export function createSmtpTransport(config: OciConfig): SmtpTransport | null {
+  if (!isSmtpConfigured(config)) {
+    return null;
+  }
+
+  // isSmtpConfigured already verified these are truthy; narrow explicitly
+  // rather than asserting, since it only checks booleans, not types.
+  const { host, port, user, pass } = config.smtp;
+  if (!host || !user || !pass) {
+    return null;
+  }
+
+  return createSmtpTransportFromCredentials({ host, port, user, pass });
+}
+
 export function createOciProviderFromEnv(env: OciEnv) {
   const config = readOciConfig(env);
   return new OciEmailProvider({
     config,
     api: createOciEmailApi(config),
     transport: createSmtpTransport(config),
+    createPoolTransport: createSmtpTransportFromCredentials,
     ...createOciLoggingApis(config),
   });
 }

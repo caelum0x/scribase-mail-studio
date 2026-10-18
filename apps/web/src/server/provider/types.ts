@@ -32,6 +32,14 @@ export type SendRawEmailInput = {
   headers?: Record<string, string>;
   /** Full Message-ID without angle brackets, e.g. `abc@mail.example.com`. */
   messageId: string;
+  /**
+   * Dedicated sending pool name (Team.sendingPool). When set, the provider
+   * routes this message through the pool-specific SMTP credentials instead
+   * of the shared relay, isolating this team's sender reputation. Falls
+   * back to the shared relay when no credentials are provisioned for the
+   * pool name.
+   */
+  sendingPool?: string | null;
 };
 
 export type SendRawEmailResult = {

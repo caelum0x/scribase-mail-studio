@@ -63,6 +63,34 @@ export function createGenericSmtpTransport(
   }) as unknown as GenericSmtpTransport;
 }
 
+export type SmtpPoolCredentials = {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+};
+
+/**
+ * Builds a transport for a dedicated sending pool's own credentials. Reuses
+ * the same TLS/pooling settings as the default relay: implicit TLS on 465,
+ * required STARTTLS otherwise (self-host relays are assumed to support it;
+ * set the pool's port to 465 if the pool's relay only speaks implicit TLS).
+ */
+export function createGenericSmtpTransportFromCredentials(
+  creds: SmtpPoolCredentials,
+): GenericSmtpTransport {
+  const secure = creds.port === 465;
+  return nodemailer.createTransport({
+    host: creds.host,
+    port: creds.port,
+    secure,
+    requireTLS: !secure,
+    auth: { user: creds.user, pass: creds.pass },
+    pool: true,
+    maxConnections: SMTP_POOL_MAX_CONNECTIONS,
+  }) as unknown as GenericSmtpTransport;
+}
+
 export function createGenericSmtpProviderFromEnv(
   env: SmtpEnv,
   keyStore: DkimKeyStore,
@@ -73,5 +101,6 @@ export function createGenericSmtpProviderFromEnv(
     transport: createGenericSmtpTransport(config),
     keyStore,
     resolveTxt: (name) => dns.resolveTxt(name),
+    createPoolTransport: createGenericSmtpTransportFromCredentials,
   });
 }

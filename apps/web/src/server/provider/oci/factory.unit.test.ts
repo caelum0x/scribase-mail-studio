@@ -65,6 +65,7 @@ import {
   createOciEmailApi,
   createOciProviderFromEnv,
   createSmtpTransport,
+  createSmtpTransportFromCredentials,
 } from "./factory";
 import {
   isOciApiConfigured,
@@ -200,5 +201,38 @@ describe("factory", () => {
     expect(provider.spfRecord).toBe(
       "v=spf1 include:rp.oracleemaildelivery.com ~all",
     );
+  });
+
+  describe("createSmtpTransportFromCredentials (dedicated sending pools)", () => {
+    it("creates a STARTTLS pooled transport for a pool's own credentials", () => {
+      createSmtpTransportFromCredentials({
+        host: "dedicated-smtp.oci.com",
+        port: 587,
+        user: "pool-user",
+        pass: "pool-pass",
+      });
+      expect(mockCreateTransport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: "dedicated-smtp.oci.com",
+          port: 587,
+          secure: false,
+          requireTLS: true,
+          pool: true,
+          auth: { user: "pool-user", pass: "pool-pass" },
+        }),
+      );
+    });
+
+    it("uses implicit TLS on port 465 for a pool too", () => {
+      createSmtpTransportFromCredentials({
+        host: "dedicated-smtp.oci.com",
+        port: 465,
+        user: "pool-user",
+        pass: "pool-pass",
+      });
+      expect(mockCreateTransport).toHaveBeenCalledWith(
+        expect.objectContaining({ secure: true, requireTLS: false }),
+      );
+    });
   });
 });

@@ -342,6 +342,20 @@ export class EmailQueueService {
   }
 }
 
+/**
+ * The dedicated sending pool name configured for a team (`Team.sendingPool`),
+ * or null when the team sends through the shared relay. Read at send time
+ * so `team.setSendingPool` actually changes delivery, instead of only
+ * persisting a preference nothing consumes.
+ */
+async function getTeamSendingPool(teamId: number): Promise<string | null> {
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { sendingPool: true },
+  });
+  return team?.sendingPool ?? null;
+}
+
 export async function executeEmail(job: QueueEmailJob) {
   logger.info(
     { emailId: job.data.emailId, elapsed: Date.now() - job.data.timestamp },
@@ -520,6 +534,7 @@ export async function executeEmail(job: QueueEmailJob) {
 
     const provider = getEmailProvider();
     const messageId = buildMessageId(email.id, email.from);
+    const sendingPool = await getTeamSendingPool(email.teamId);
 
     await provider.ensureApprovedSender(email.from);
 
@@ -551,6 +566,7 @@ export async function executeEmail(job: QueueEmailJob) {
         isBulk,
         inReplyToMessageId,
       }),
+      sendingPool,
     });
 
     logger.info(

@@ -2,6 +2,7 @@
 import { createPublicKey, generateKeyPairSync } from "crypto";
 import { DomainStatus } from "@prisma/client";
 import type { SentMessageInfo } from "nodemailer";
+import { getSmtpCredentialsForPool } from "~/server/service/multi-region-service";
 import {
   ProviderSendError,
   type ApprovedSender,
@@ -151,12 +152,26 @@ export class GenericSmtpProvider implements EmailProvider {
   private readonly resolveTxt: TxtResolver;
   private readonly generateKeyPair: KeyPairGenerator;
 
+  private readonly createPoolTransport?: (creds: {
+    host: string;
+    port: number;
+    user: string;
+    pass: string;
+  }) => GenericSmtpTransport;
+  private readonly poolTransports = new Map<string, GenericSmtpTransport>();
+
   constructor(options: {
     config: SmtpProviderConfig;
     transport: GenericSmtpTransport | null;
     keyStore: DkimKeyStore;
     resolveTxt: TxtResolver;
     generateKeyPair?: KeyPairGenerator;
+    createPoolTransport?: (creds: {
+      host: string;
+      port: number;
+      user: string;
+      pass: string;
+    }) => GenericSmtpTransport;
   }) {
     this.config = options.config;
     this.region = options.config.region;
@@ -165,6 +180,30 @@ export class GenericSmtpProvider implements EmailProvider {
     this.keyStore = options.keyStore;
     this.resolveTxt = options.resolveTxt;
     this.generateKeyPair = options.generateKeyPair ?? generateDkimKeyPair;
+    this.createPoolTransport = options.createPoolTransport;
+  }
+
+  /** Same fallback semantics as OciEmailProvider.resolveTransport. */
+  private resolveTransport(
+    sendingPool: string | null | undefined,
+  ): GenericSmtpTransport | null {
+    if (!sendingPool || !this.createPoolTransport) {
+      return this.transport;
+    }
+
+    const creds = getSmtpCredentialsForPool(sendingPool);
+    if (!creds || creds.poolName === null) {
+      return this.transport;
+    }
+
+    const cached = this.poolTransports.get(creds.poolName);
+    if (cached) {
+      return cached;
+    }
+
+    const created = this.createPoolTransport(creds);
+    this.poolTransports.set(creds.poolName, created);
+    return created;
   }
 
   // ---------------------------------------------------------------------------
@@ -172,7 +211,8 @@ export class GenericSmtpProvider implements EmailProvider {
   // ---------------------------------------------------------------------------
 
   async sendRawEmail(input: SendRawEmailInput): Promise<SendRawEmailResult> {
-    if (!this.transport) {
+    const transport = this.resolveTransport(input.sendingPool);
+    if (!transport) {
       throw new ProviderSendError("SMTP relay is not configured (SMTP_HOST)", {
         retryable: false,
       });
@@ -185,7 +225,7 @@ export class GenericSmtpProvider implements EmailProvider {
 
     let info: SentMessageInfo;
     try {
-      info = await this.transport.sendMail({
+      info = await transport.sendMail({
         from: input.from,
         to: input.to,
         cc: input.cc,

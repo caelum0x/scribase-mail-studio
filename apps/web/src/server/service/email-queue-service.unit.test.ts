@@ -14,6 +14,7 @@ const {
       domain: { findUnique: vi.fn() },
       contact: { findUnique: vi.fn() },
       emailEvent: { create: vi.fn() },
+      team: { findUnique: vi.fn() },
     },
     mockProvider: {
       ensureApprovedSender: vi.fn(),
@@ -107,6 +108,7 @@ describe("executeEmail", () => {
     mockCheckAddresses.mockResolvedValue({
       "user@example.com": { blocked: false, verdict: "unverified" },
     });
+    mockDb.team.findUnique.mockResolvedValue({ sendingPool: null });
   });
 
   it("sends through the provider and records the SENT event", async () => {
@@ -141,6 +143,40 @@ describe("executeEmail", () => {
       }),
     );
     expect(mockDb.emailEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the team's dedicated sending pool to the provider", async () => {
+    mockDb.team.findUnique.mockResolvedValue({ sendingPool: "highvol" });
+    mockProvider.sendRawEmail.mockResolvedValue({
+      messageId: "em_1@acme.test",
+      accepted: ["user@example.com"],
+      rejected: [],
+      response: "250 Ok",
+    });
+
+    await executeEmail(job());
+
+    expect(mockDb.team.findUnique).toHaveBeenCalledWith({
+      where: { id: 7 },
+      select: { sendingPool: true },
+    });
+    const input = mockProvider.sendRawEmail.mock.calls[0]![0];
+    expect(input.sendingPool).toBe("highvol");
+  });
+
+  it("passes a null sending pool when the team has none set", async () => {
+    mockDb.team.findUnique.mockResolvedValue({ sendingPool: null });
+    mockProvider.sendRawEmail.mockResolvedValue({
+      messageId: "em_1@acme.test",
+      accepted: ["user@example.com"],
+      rejected: [],
+      response: "250 Ok",
+    });
+
+    await executeEmail(job());
+
+    const input = mockProvider.sendRawEmail.mock.calls[0]![0];
+    expect(input.sendingPool).toBeNull();
   });
 
   it("marks the email FAILED on a permanent provider error", async () => {

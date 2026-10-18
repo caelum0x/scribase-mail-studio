@@ -2,6 +2,7 @@ import type { requests, responses, models } from "oci-email";
 import type { SendMailOptions, SentMessageInfo } from "nodemailer";
 import { DomainStatus } from "@prisma/client";
 import { logger } from "~/server/logger/log";
+import { getSmtpCredentialsForPool } from "~/server/service/multi-region-service";
 import {
   ProviderSendError,
   type ApprovedSender,
@@ -96,6 +97,18 @@ export type OciEmailProviderDeps = {
   senderCacheTtlMs?: number;
   domainActivePollAttempts?: number;
   domainActivePollIntervalMs?: number;
+  /**
+   * Builds a one-off SMTP transport for a dedicated sending pool's
+   * credentials. Omitted in tests that don't exercise pool routing; when
+   * absent, pool-routed sends fall back to the shared `transport`.
+   */
+  // eslint-disable-next-line no-unused-vars -- parameter name in type signature
+  createPoolTransport?: (creds: {
+    host: string;
+    port: number;
+    user: string;
+    pass: string;
+  }) => SmtpTransport;
 };
 
 const DKIM_SELECTOR_PREFIX = "scribase";
@@ -151,12 +164,15 @@ export class OciEmailProvider implements EmailProvider {
   private readonly domainActivePollIntervalMs: number;
   private readonly approvedSenderCache = new Map<string, number>();
   private readonly deliveryLogs: OciDeliveryLogs;
+  private readonly createPoolTransport?: OciEmailProviderDeps["createPoolTransport"];
+  private readonly poolTransports = new Map<string, SmtpTransport>();
 
   constructor(deps: OciEmailProviderDeps) {
     this.config = deps.config;
     this.region = deps.config.region;
     this.apiClient = deps.api;
     this.transport = deps.transport;
+    this.createPoolTransport = deps.createPoolTransport;
     this.sleep =
       deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.senderCacheTtlMs = deps.senderCacheTtlMs ?? 60 * 60 * 1000;
@@ -175,8 +191,39 @@ export class OciEmailProvider implements EmailProvider {
   // Sending (SMTP)
   // ---------------------------------------------------------------------------
 
+  /**
+   * Resolves the transport for this send: the team's dedicated sending
+   * pool when `sendingPool` is set and credentials are provisioned for it,
+   * otherwise the shared relay. Pool transports are cached per pool name
+   * (nodemailer pools connections; recreating one per send would defeat
+   * that) and never throw — an unprovisioned pool silently falls back to
+   * the shared relay, matching `getSmtpCredentialsForPool`'s own fallback.
+   */
+  private resolveTransport(sendingPool: string | null | undefined): SmtpTransport | null {
+    if (!sendingPool || !this.createPoolTransport) {
+      return this.transport;
+    }
+
+    const creds = getSmtpCredentialsForPool(sendingPool);
+    if (!creds || creds.poolName === null) {
+      // No dedicated credentials provisioned for this pool name; the
+      // warning is already logged by getSmtpCredentialsForPool.
+      return this.transport;
+    }
+
+    const cached = this.poolTransports.get(creds.poolName);
+    if (cached) {
+      return cached;
+    }
+
+    const created = this.createPoolTransport(creds);
+    this.poolTransports.set(creds.poolName, created);
+    return created;
+  }
+
   async sendRawEmail(input: SendRawEmailInput): Promise<SendRawEmailResult> {
-    if (!this.transport) {
+    const transport = this.resolveTransport(input.sendingPool);
+    if (!transport) {
       throw new ProviderSendError("SMTP relay is not configured", {
         retryable: false,
       });
@@ -184,7 +231,7 @@ export class OciEmailProvider implements EmailProvider {
 
     let info: SentMessageInfo;
     try {
-      info = await this.transport.sendMail({
+      info = await transport.sendMail({
         from: input.from,
         to: input.to,
         cc: input.cc,
