@@ -347,6 +347,32 @@ describe("executeEmail", () => {
     expect(mockDb.emailEvent.create).not.toHaveBeenCalled();
   });
 
+  it("marks FAILED instead of leaving the row stuck at QUEUED when setup before the send throws (issue #406/#407)", async () => {
+    // Corrupted attachments JSON throws during setup, before the provider is
+    // ever called. This used to happen outside the try/catch entirely: BullMQ
+    // would retry the job, but once attempts were exhausted nothing ever
+    // updated the Email row, so it stayed QUEUED forever with no FAILED
+    // event and no way to tell what happened.
+    mockDb.email.findUnique.mockResolvedValue({
+      ...email,
+      attachments: "{not valid json",
+    });
+
+    await executeEmail(job());
+
+    expect(mockProvider.sendRawEmail).not.toHaveBeenCalled();
+    expect(mockDb.emailEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        emailId: "em_1",
+        status: "FAILED",
+      }),
+    });
+    expect(mockDb.email.update).toHaveBeenCalledWith({
+      where: { id: "em_1" },
+      data: { latestStatus: "FAILED" },
+    });
+  });
+
   it("does not mark FAILED when only the bookkeeping after send fails", async () => {
     mockProvider.sendRawEmail.mockResolvedValue({
       messageId: "em_1@acme.test",

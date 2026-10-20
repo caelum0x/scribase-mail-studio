@@ -366,12 +366,6 @@ export async function executeEmail(job: QueueEmailJob) {
     where: { id: job.data.emailId },
   });
 
-  const domain = email?.domainId
-    ? await db.domain.findUnique({
-        where: { id: email?.domainId },
-      })
-    : null;
-
   if (!email) {
     logger.info(
       { emailId: job.data.emailId },
@@ -380,63 +374,76 @@ export async function executeEmail(job: QueueEmailJob) {
     return;
   }
 
-  const attachments: Array<EmailAttachment> = email.attachments
-    ? JSON.parse(email.attachments)
-    : [];
+  // Everything below (including setup that happens before the provider call)
+  // is inside this try/catch. Previously only the provider send itself was
+  // guarded, so an exception while parsing attachments, templating the
+  // subject, or resolving the in-reply-to message would propagate uncaught:
+  // BullMQ would retry the job, but once attempts were exhausted nothing
+  // ever marked the Email row, leaving it stuck at QUEUED forever. Wrapping
+  // the whole job body guarantees a terminal SENT/FAILED status.
+  try {
+    const domain = email.domainId
+      ? await db.domain.findUnique({
+          where: { id: email.domainId },
+        })
+      : null;
 
-  logger.info({ domain }, `Domain`);
+    const attachments: Array<EmailAttachment> = email.attachments
+      ? JSON.parse(email.attachments)
+      : [];
 
-  logger.info({ emailId: email.id }, `[EmailQueueService]: Sending email`);
-  const unsubUrl = job.data.unsubUrl;
-  const isBulk = job.data.isBulk;
+    logger.info({ domain }, `Domain`);
 
-  const text = email.text
-    ? email.text
-    : email.campaignId && email.html
-      ? htmlToText(email.html)
-      : undefined;
-  let subject = email.subject;
+    logger.info({ emailId: email.id }, `[EmailQueueService]: Sending email`);
+    const unsubUrl = job.data.unsubUrl;
+    const isBulk = job.data.isBulk;
 
-  if (email.campaignId && email.contactId && subject.includes("{{")) {
-    const contact = await db.contact.findUnique({
-      where: { id: email.contactId },
-      include: {
-        contactBook: {
-          select: { variables: true },
+    const text = email.text
+      ? email.text
+      : email.campaignId && email.html
+        ? htmlToText(email.html)
+        : undefined;
+    let subject = email.subject;
+
+    if (email.campaignId && email.contactId && subject.includes("{{")) {
+      const contact = await db.contact.findUnique({
+        where: { id: email.contactId },
+        include: {
+          contactBook: {
+            select: { variables: true },
+          },
         },
-      },
-    });
+      });
 
-    if (contact) {
-      subject = replaceContactVariables(subject, contact, [
-        ...BUILT_IN_CONTACT_VARIABLES,
-        ...contact.contactBook.variables,
-      ]);
+      if (contact) {
+        subject = replaceContactVariables(subject, contact, [
+          ...BUILT_IN_CONTACT_VARIABLES,
+          ...contact.contactBook.variables,
+        ]);
 
-      if (subject !== email.subject) {
-        await db.email.update({
-          where: { id: email.id },
-          data: { subject },
-        });
+        if (subject !== email.subject) {
+          await db.email.update({
+            where: { id: email.id },
+            data: { subject },
+          });
+        }
       }
     }
-  }
 
-  let inReplyToMessageId: string | undefined = undefined;
+    let inReplyToMessageId: string | undefined = undefined;
 
-  if (email.inReplyToId) {
-    const replyEmail = await db.email.findUnique({
-      where: {
-        id: email.inReplyToId,
-      },
-    });
+    if (email.inReplyToId) {
+      const replyEmail = await db.email.findUnique({
+        where: {
+          id: email.inReplyToId,
+        },
+      });
 
-    if (replyEmail && replyEmail.providerMessageId) {
-      inReplyToMessageId = replyEmail.providerMessageId;
+      if (replyEmail && replyEmail.providerMessageId) {
+        inReplyToMessageId = replyEmail.providerMessageId;
+      }
     }
-  }
 
-  try {
     // Check limits right before sending (cloud-only)
     const limitCheck = await LimitService.checkEmailLimit(email.teamId);
     logger.info({ limitCheck }, `[EmailQueueService]: Limit check`);
