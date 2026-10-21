@@ -108,21 +108,49 @@ slow. Confirmed after `up -d web`:
    abuse control), or commit to checking Admin > Waitlist at least daily so
    approval turnaround stays same-day.
 
-2. **Pro/Scale's `dailyEmailLimit` default (10,000/day) isn't synced to the
-   plan's `-1` ("no daily cap") on upgrade.** Marketing says "No daily sending
-   cap" for Pro/Scale; the enforced value is a per-team DB column that an admin
-   can raise but nothing currently sets to unlimited automatically when a team's
-   Dodo subscription goes active. Not a practical blocker today (10k/day exceeds
-   any Pro/Scale customer's realistic daily volume), but worth fixing so the
-   webhook handler for `subscription.active`/`subscription.plan_changed` also
-   sets `dailyEmailLimit = -1` for PRO/SCALE teams, to close the gap between what
-   is promised and what is enforced before it ever bites a real high-volume
-   customer.
+2. ~~**Pro/Scale's `dailyEmailLimit` default isn't synced to `-1` on
+   upgrade.**~~ **FIXED** (commit `37601ea`, `fix(billing): lift the per-team
+   daily send cap to unlimited on PRO/SCALE upgrade`, already on `origin/main`
+   and live). `webhook-handler.ts`'s `applySubscription` now sets
+   `dailyEmailLimit = -1` whenever a team's plan becomes an active paid plan
+   and its limit is still sitting on the untouched schema default
+   (`DEFAULT_DAILY_EMAIL_LIMIT = 10_000`) — an admin's explicit override is
+   left alone. Confirmed by reading the current code (2026-10-21), not just
+   the commit message.
 
 3. **No web analytics anywhere** (marketing site or app) — no Plausible/PostHog/GA
    found in either `apps/marketing` or `apps/web`. There's currently no way to
    measure landing-page → signup → paid conversion. Not a code "bug" but worth
    wiring up so future growth work on this product has numbers to act on.
+   Checked 2026-10-21: the simplest fix (Cloudflare Web Analytics — free, no
+   server, one `<script>` beacon) needs a token with the `rum:edit`/analytics
+   write scope; the current Cloudflare API token and cached wrangler OAuth on
+   this machine only carry read scopes for zone-level Web Analytics (confirmed:
+   `POST /zones/{id}/rum/v2/site_info` → 403 "Unable to authenticate request").
+   **Owner action (~2 min, no 2FA):** Cloudflare dashboard → Analytics & Logs →
+   Web Analytics → Add site → `scribase.com` and `mail.scribase.com` → paste the
+   generated `<script>` beacon into `apps/marketing/src/app/layout.tsx` and
+   `apps/web/src/app/layout.tsx` (or just hand the beacon script to an agent to
+   paste in — the only non-automatable part is generating it in the dashboard).
+
+## Fourth pass (2026-10-21): auth endpoints had zero rate limiting
+
+The CSPRNG sign-in-token fix (`f04ed9a`, same day) neutralized brute-forcing the
+token itself, but noted "there is no rate limiting anywhere on the
+`/api/auth/callback/email` route (no `middleware.ts` in this app at all)" — still
+true as of this pass, and it also meant `/api/auth/signin/email` (the magic-link
+*request*) was unthrottled, so anyone could flood a victim's inbox with sign-in
+emails for free. Built `apps/web/src/middleware.ts` (new file — this is the
+app's first) plus a pure, unit-tested fixed-window limiter
+(`src/server/auth/auth-rate-limit.ts`, 4 new tests, fails open on a Redis outage
+like the existing per-team API limiter) wired via Next's Node-runtime middleware
+(`export const runtime = "nodejs"`, required because `ioredis` needs a real TCP
+socket, not the Edge runtime). Limits: 5 sign-in requests / 10 min / IP, 20
+callback attempts / 10 min / IP, both return 429 + `Retry-After`. `apps/web`
+unit suite: 608/608 passed (up from the 591 recorded in the pass above),
+`tsc --noEmit` 0 errors. Not yet deployed to `box` in this pass — see repo
+root `PLAN.md` for the deploy step (same `ssh box` + `docker compose build web`
+path as every other change in this file).
 
 ## 2026-10-18 (later pass): sender-reputation gap — built, pushed, blocked on deploy only
 
