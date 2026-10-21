@@ -148,9 +148,18 @@ like the existing per-team API limiter) wired via Next's Node-runtime middleware
 socket, not the Edge runtime). Limits: 5 sign-in requests / 10 min / IP, 20
 callback attempts / 10 min / IP, both return 429 + `Retry-After`. `apps/web`
 unit suite: 608/608 passed (up from the 591 recorded in the pass above),
-`tsc --noEmit` 0 errors. Not yet deployed to `box` in this pass — see repo
-root `PLAN.md` for the deploy step (same `ssh box` + `docker compose build web`
-path as every other change in this file).
+`tsc --noEmit` 0 errors. Not yet deployed to `box` in this pass: `ssh box` (`130.61.180.42`) still
+gets `Connection refused` on port 22, same as the second pass above — this is
+not a one-off, sshd/firewall on `box` has now been unreachable across two
+separate sessions today. **Owner action needed:** check the Oracle Cloud
+Console for `box` — reboot it or fix the security-list/firewall rule for port
+22 (OCI Console access, owner-only). Once SSH is back: `git pull && docker
+compose -f deploy/compose.scribase-mail.yml --env-file deploy/.env build web
+&& up -d web` with `GIT_SHA=4bc873f` in `deploy/.env`, then verify
+`curl https://mail.scribase.com/api/health`. Commit `4bc873f` is on
+`origin/main`, tested, ready; the currently-live build is unaffected and still
+healthy (confirmed `curl https://mail.scribase.com/api/health` → `{"data":"Healthy"}`
+over HTTPS, so only SSH — not the app itself — is down).
 
 ## 2026-10-18 (later pass): sender-reputation gap — built, pushed, blocked on deploy only
 
