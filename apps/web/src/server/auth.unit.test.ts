@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => {
     GITHUB_ID: "github-client-id",
     GITHUB_SECRET: "github-client-secret",
     NEXT_PUBLIC_IS_CLOUD: true,
+    // `authOptions.providers` is built once at module load time, so this
+    // must be set up front (not toggled in beforeEach) for the email
+    // provider to exist when `authOptions` is imported below.
+    FROM_EMAIL: "noreply@scribase.com" as string | undefined,
   };
 
   const baseCreateUser = vi.fn();
@@ -90,6 +94,7 @@ vi.mock("~/env", () => ({ env: mocks.env }));
 import {
   authOptions,
   canRegisterSelfHostedUser,
+  generateSignInToken,
   SelfHostedRegistrationError,
 } from "~/server/auth";
 
@@ -219,6 +224,61 @@ describe("authOptions", () => {
 
       await expect(canRegisterSelfHostedUser(null)).resolves.toBe(false);
       expect(mocks.inviteFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("generateSignInToken", () => {
+    it("never uses Math.random (not cryptographically secure)", () => {
+      const randomSpy = vi.spyOn(Math, "random");
+
+      generateSignInToken();
+
+      expect(randomSpy).not.toHaveBeenCalled();
+      randomSpy.mockRestore();
+    });
+
+    it("has enough entropy to resist brute force (>= 8 chars from a 36-char alphabet)", () => {
+      const token = generateSignInToken();
+
+      expect(token.length).toBeGreaterThanOrEqual(8);
+      expect(token).toMatch(/^[0-9a-z]+$/);
+    });
+
+    it("produces different tokens across calls", () => {
+      const tokens = new Set(
+        Array.from({ length: 20 }, () => generateSignInToken()),
+      );
+
+      // Astronomically unlikely to collide with real randomness.
+      expect(tokens.size).toBe(20);
+    });
+  });
+
+  describe("email provider configuration", () => {
+    it("generates verification tokens with enough entropy to resist brute force", async () => {
+      const emailProvider = authOptions.providers.find(
+        (provider) => provider.id === "email",
+      );
+
+      expect(emailProvider).toBeDefined();
+
+      const token = await (emailProvider as any).options
+        .generateVerificationToken();
+
+      expect(token.length).toBeGreaterThanOrEqual(8);
+      expect(token).toMatch(/^[0-9a-z]+$/);
+    });
+
+    it("keeps the sign-in token window short, since the token also doubles as a human-typed OTP", () => {
+      const emailProvider = authOptions.providers.find(
+        (provider) => provider.id === "email",
+      );
+
+      expect(emailProvider).toBeDefined();
+      // Must be well under NextAuth's 24h default to bound brute-force risk.
+      expect((emailProvider as any).options.maxAge).toBeLessThanOrEqual(
+        15 * 60,
+      );
     });
   });
 

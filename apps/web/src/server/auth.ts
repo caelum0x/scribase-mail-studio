@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import {
   getServerSession,
@@ -17,6 +18,41 @@ import { tryAutoApproveUser } from "~/server/service/waitlist-auto-approve-servi
 import { db } from "~/server/db";
 
 const GITHUB_OAUTH_ISSUER = "https://github.com/login/oauth";
+
+/**
+ * Length/alphabet for the email sign-in token (see `generateSignInToken`).
+ * 36^8 (~2.8e12) possible values, generated with a CSPRNG, keeps brute force
+ * on `/api/auth/callback/email` impractical within `SIGN_IN_TOKEN_MAX_AGE`.
+ */
+const SIGN_IN_TOKEN_LENGTH = 8;
+const SIGN_IN_TOKEN_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+/** Sign-in link/OTP validity window, in seconds. NextAuth's EmailProvider
+ * defaults to 24h; this token also doubles as a human-typed OTP (see
+ * sendSignUpEmail), so it is kept short to bound the brute-force window. */
+const SIGN_IN_TOKEN_MAX_AGE = 15 * 60;
+
+/**
+ * Generates the token NextAuth emails for passwordless sign-in.
+ *
+ * NextAuth's EmailProvider defaults to `crypto.randomBytes(32).toString("hex")`
+ * (256 bits of CSPRNG entropy). This app previously overrode it with
+ * `Math.random().toString(36).substring(2, 7)` so the same value could double
+ * as a short, human-typeable OTP — but Math.random() is not cryptographically
+ * secure and a 5-character result only has ~26 bits of entropy (36^5 ≈ 60M
+ * combinations), with no rate limiting on the callback route. That made the
+ * sign-in token brute-forceable by anyone who knew a target's email address.
+ * `randomInt` (CSPRNG) plus a longer token closes that gap while still being
+ * short enough to type.
+ */
+export function generateSignInToken(
+  length: number = SIGN_IN_TOKEN_LENGTH,
+): string {
+  let token = "";
+  for (let i = 0; i < length; i++) {
+    token += SIGN_IN_TOKEN_ALPHABET[randomInt(SIGN_IN_TOKEN_ALPHABET.length)];
+  }
+  return token;
+}
 
 /**
  * PostgreSQL advisory-lock namespace for self-hosted user creation.
@@ -161,11 +197,12 @@ function getProviders() {
     providers.push(
       EmailProvider({
         from: env.FROM_EMAIL,
+        maxAge: SIGN_IN_TOKEN_MAX_AGE,
         async sendVerificationRequest({ identifier: email, url, token }) {
           await sendSignUpEmail(email, token, url);
         },
         async generateVerificationToken() {
-          return Math.random().toString(36).substring(2, 7).toLowerCase();
+          return generateSignInToken();
         },
       }),
     );
