@@ -171,10 +171,16 @@ RESEND_BASE_URL=https://mail-api.scribase.com RESEND_API_KEY=$KEY node -e '
 ```
 
    The path-prefix form `https://mail.scribase.com/api/resend` works too (the
-   SDK concatenates base URL and path). Implemented so far: `POST /emails`,
-   `GET /emails/{id}`, `GET /emails` (cursor pagination). Fields not yet
-   supported (`attachments[].path`, `content_id`, `content_type`, `topic_id`)
-   return a 422 with a clear message instead of being dropped. API keys with
+   SDK concatenates base URL and path). Implemented: `emails` (send, batch,
+   get, update, cancel, reschedule, received inbound mail + attachments),
+   `domains`, `api-keys`, `webhooks`, `broadcasts`, `audiences`/`contacts`,
+   `segments`, `contact-properties`, `topics`, `templates`, `suppressions`,
+   `logs`, `metrics`. Attachments support both `content` (base64) and `path`
+   (fetched server-side with SSRF guards: HTTPS only, no redirects, no
+   private/reserved IPs, 40 MB cap) plus `content_type`/`content_id` for
+   inline images. `topic_id` is the one field still rejected with a 422
+   (`not supported yet`) instead of being silently dropped; every other
+   unknown field is also rejected rather than dropped. API keys with
    "Sending access" can only call `POST /emails` and `POST /emails/batch`
    (Resend semantics) on both APIs. Default rate limit is 10 req/s per team
    (Admin > Teams to change it per team), shared by both APIs.
