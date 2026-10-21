@@ -33,7 +33,6 @@ export const VariableExtension = Node.create<VariableExtensionOptions>({
         char: "{{",
         pluginKey: VariablePluginKey,
         command: ({ editor, range, props }) => {
-          console.log("props: ", props);
           editor
             .chain()
             .focus()
@@ -57,7 +56,6 @@ export const VariableExtension = Node.create<VariableExtensionOptions>({
           const allow = type
             ? !!$from.parent.type.contentMatch.matchType(type)
             : false;
-          console.log("allow: ", allow);
 
           return allow;
         },

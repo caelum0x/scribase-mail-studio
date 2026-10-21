@@ -166,7 +166,6 @@ export function DragHandlePlugin(
     }
 
     const slice = view.state.selection.content();
-    console.log(slice, view);
     const { dom, text } = view.serializeForClipboard(slice);
 
     event.dataTransfer.clearData();

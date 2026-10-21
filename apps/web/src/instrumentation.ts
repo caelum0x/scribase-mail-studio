@@ -1,4 +1,5 @@
 import { initDomainVerificationJob } from "~/server/jobs/domain-verification-job";
+import { logger } from "~/server/logger/log";
 import { isCloud, isEmailCleanupEnabled } from "~/utils/common";
 
 let initialized = false;
@@ -11,7 +12,7 @@ let initialized = false;
 export async function register() {
   // eslint-disable-next-line turbo/no-undeclared-env-vars
   if (process.env.NEXT_RUNTIME === "nodejs" && !initialized) {
-    console.log("Registering instrumentation");
+    logger.info("Registering instrumentation");
 
     const { EmailQueueService } =
       await import("~/server/service/email-queue-service");

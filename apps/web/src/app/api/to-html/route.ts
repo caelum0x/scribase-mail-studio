@@ -1,4 +1,5 @@
 import { EmailRenderer } from "@usesend/email-editor/src/renderer";
+import { logger } from "~/server/logger/log";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
         "{{unsend_unsubscribe_url}}": "https://mail.scribase.com/unsubscribe",
       },
     });
-    console.log(`Time taken: ${Date.now() - time}ms`);
+    logger.info({ ms: Date.now() - time }, "[to-html]: Rendered");
     return new Response(JSON.stringify({ data: html }), {
       headers: {
         "Content-Type": "application/json",
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
-    console.error(e);
+    logger.error({ err: e }, "[to-html]: Failed to render");
     return new Response(
       JSON.stringify({ data: "Error in converting to html" }),
       {

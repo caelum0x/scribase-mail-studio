@@ -45,8 +45,6 @@ export function ButtonComponent(props: NodeViewProps) {
 
   const [editUrlOpen, setEditUrlOpen] = useState(false);
 
-  console.log(props);
-
   return (
     <NodeViewWrapper
       className={`react-component ${

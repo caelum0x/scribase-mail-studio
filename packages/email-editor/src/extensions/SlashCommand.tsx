@@ -176,7 +176,6 @@ const DEFAULT_SLASH_COMMANDS = (uploadImage?: UploadFn): SlashCommandItem[] => [
               .updateAttributes("image", { isUploading: true })
               .run();
             try {
-              console.log("before upload");
               const url = await uploadImage(file);
               editor
                 .chain()
