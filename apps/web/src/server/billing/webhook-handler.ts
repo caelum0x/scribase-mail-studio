@@ -5,7 +5,23 @@ import { logger } from "../logger/log";
 import { sendSubscriptionConfirmationEmail } from "../mailer";
 import { TeamService } from "../service/team-service";
 import { getDodoClient, getProductIds } from "./dodo-client";
-import { planFromProductId, teamStateForSubscription } from "./plan-mapping";
+import {
+  isPaidPlan,
+  planFromProductId,
+  teamStateForSubscription,
+} from "./plan-mapping";
+
+/**
+ * `Team.dailyEmailLimit`'s Prisma schema default (`schema.prisma`). PRO/SCALE
+ * plans are marketed as "No daily sending cap" (`PLAN_LIMITS.PRO/SCALE.emailsPerDay
+ * === -1`), but the daily limit actually enforced in `LimitService` is this
+ * per-team DB column, not the plan's advertised value - an admin can still
+ * tighten it per team for abuse control. A team still sitting on the untouched
+ * schema default when its subscription activates has never had that column
+ * customized, so it is safe to raise it to -1 (unlimited) here to match what
+ * is promised; any other value is an explicit admin override and is left alone.
+ */
+const DEFAULT_DAILY_EMAIL_LIMIT = 10_000;
 
 /** Minimal shape of a Dodo event; the SDK's unwrap() returns a superset. */
 export interface DodoWebhookEvent {
@@ -192,6 +208,11 @@ async function applySubscription(
     }
   }
 
+  const shouldUnlockDailyLimit =
+    next.isActive &&
+    isPaidPlan(next.plan) &&
+    team.dailyEmailLimit === DEFAULT_DAILY_EMAIL_LIMIT;
+
   await tx.team.update({
     where: { id: team.id },
     data: {
@@ -200,6 +221,7 @@ async function applySubscription(
       ...(team.billingCustomerId
         ? {}
         : { billingCustomerId: snap.customer.customer_id }),
+      ...(shouldUnlockDailyLimit ? { dailyEmailLimit: -1 } : {}),
     },
   });
 

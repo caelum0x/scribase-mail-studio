@@ -5,6 +5,7 @@ type TeamRow = {
   plan: "FREE" | "PRO" | "SCALE";
   isActive: boolean;
   billingCustomerId: string | null;
+  dailyEmailLimit: number;
 };
 type SubRow = { id: string; teamId: number; status: string };
 
@@ -151,7 +152,13 @@ describe("processDodoWebhook", () => {
   beforeEach(() => {
     state.claimed = new Set();
     state.teams = [
-      { id: 1, plan: "FREE", isActive: true, billingCustomerId: "cus_1" },
+      {
+        id: 1,
+        plan: "FREE",
+        isActive: true,
+        billingCustomerId: "cus_1",
+        dailyEmailLimit: 10_000,
+      },
     ];
     state.subs = [];
     retrieve.mockReset();
@@ -181,6 +188,20 @@ describe("processDodoWebhook", () => {
       productId: "pdt_pro",
       provider: "dodo",
     });
+  });
+
+  it("raises dailyEmailLimit to unlimited when a team on the untouched default upgrades to a paid plan", async () => {
+    await processDodoWebhook("wh_1", event("subscription.active", subscription()));
+
+    expect(state.teams[0]).toMatchObject({ plan: "PRO", dailyEmailLimit: -1 });
+  });
+
+  it("leaves an admin-customized dailyEmailLimit alone on upgrade", async () => {
+    state.teams[0]!.dailyEmailLimit = 500;
+
+    await processDodoWebhook("wh_1", event("subscription.active", subscription()));
+
+    expect(state.teams[0]).toMatchObject({ plan: "PRO", dailyEmailLimit: 500 });
   });
 
   it("is idempotent per webhook-id", async () => {
@@ -265,7 +286,15 @@ describe("processDodoWebhook", () => {
   });
 
   it("finds the team by metadata and binds the customer id", async () => {
-    state.teams = [{ id: 1, plan: "FREE", isActive: true, billingCustomerId: null }];
+    state.teams = [
+      {
+        id: 1,
+        plan: "FREE",
+        isActive: true,
+        billingCustomerId: null,
+        dailyEmailLimit: 10_000,
+      },
+    ];
 
     await processDodoWebhook(
       "wh_1",
