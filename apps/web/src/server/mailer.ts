@@ -49,6 +49,7 @@ export async function sendTeamInviteEmail(
   email: string,
   url: string,
   teamName: string,
+  teamId?: number,
 ) {
   const { host } = new URL(url);
 
@@ -68,7 +69,10 @@ export async function sendTeamInviteEmail(
   // Fallback text version
   const text = `Hey,\n\nYou have been invited to join the team ${teamName} on Scribase Mail.\n\nYou can accept the invitation by clicking the below URL:\n${url}\n\nThanks,\nThe Scribase team`;
 
-  await sendMail(email, subject, text, html);
+  // Pass the inviting team's id through so the self-hosted fallback path (used
+  // when the provider relay is unavailable) sends from *this* team's verified
+  // domain, not an arbitrary team picked from the database.
+  await sendMail(email, subject, text, html, undefined, undefined, teamId);
 }
 
 export async function sendSubscriptionConfirmationEmail(email: string) {
@@ -135,6 +139,7 @@ export async function sendMail(
   html: string,
   replyTo?: string,
   fromOverride?: string,
+  teamId?: number,
 ) {
   // Cloud and self-hosted both relay system mail through the provider; the
   // upstream useSend cloud client is never the first choice.
@@ -154,26 +159,41 @@ export async function sendMail(
 
   if (isSelfHosted()) {
     logger.info("Sending email using self hosted");
-    /* 
-      Self hosted so checking if we can send using one of the available domain
-      Assuming self hosted will have only one team
-      TODO: fix this
+    /*
+      Self hosted fallback (used when the provider relay above is not
+      configured or fails). When the caller knows which team this email
+      belongs to (e.g. a team invite) we use that team's own domain so a
+      multi-team self-hosted install never sends from the wrong team's
+      address. When there is no team context yet (e.g. a brand new sign-in
+      email, before the user belongs to any team) we fall back to the first
+      team in the database, which is correct for the common single-team
+      self-hosted install.
      */
-    const team = await db.team.findFirst({});
+    const team = teamId
+      ? await db.team.findUnique({ where: { id: teamId } })
+      : await db.team.findFirst({});
     if (!team) {
-      logger.error("No team found");
+      logger.error({ teamId }, "No team found to send self-hosted system email");
       return;
     }
 
     const domains = await getDomains(team.id);
+    // Only a verified domain can actually relay mail (validateDomainFromEmail
+    // rejects anything else) - picking an unverified one (e.g. the most
+    // recently added domain, which may still be pending DNS) would throw and
+    // silently block every sign-in/invite email for the whole install.
+    const verifiedDomains = domains.filter((d) => d.status === "SUCCESS");
 
-    if (domains.length === 0 || !domains[0]) {
-      logger.error("No domains found");
+    if (verifiedDomains.length === 0) {
+      logger.error(
+        { teamId: team.id },
+        "No verified domain found for team; cannot send self-hosted system email. Verify a domain in Scribase Mail to enable sign-in/invite emails.",
+      );
       return;
     }
 
-    const availableDomains = domains.map((d) => d.name);
-    const domain = domains[0];
+    const availableDomains = verifiedDomains.map((d) => d.name);
+    const domain = verifiedDomains[0]!;
 
     const candidateFroms = [
       fromOverride,
@@ -187,15 +207,25 @@ export async function sendMail(
         return domainPart ? availableDomains.includes(domainPart) : false;
       }) ?? `hello@${domain.name}`;
 
-    await sendEmail({
-      teamId: team.id,
-      to: email,
-      from: selectedFrom,
-      subject,
-      text,
-      html,
-      replyTo,
-    });
+    try {
+      await sendEmail({
+        teamId: team.id,
+        to: email,
+        from: selectedFrom,
+        subject,
+        text,
+        html,
+        replyTo,
+      });
+    } catch (error) {
+      // Never let a system email failure (e.g. a race where the domain was
+      // unverified between the check above and the send) bubble up and crash
+      // the caller (NextAuth sign-in, team invite tRPC mutation, etc).
+      logger.error(
+        { err: error, teamId: team.id, selectedFrom },
+        "Failed to send self-hosted system email",
+      );
+    }
   } else if (env.UNSEND_API_KEY && (env.FROM_EMAIL || fromOverride)) {
     const fromAddress = fromOverride ?? env.FROM_EMAIL!;
     const resp = await getClient().emails.send({

@@ -197,7 +197,7 @@ export class TeamService {
     const teamUrl = `${env.NEXTAUTH_URL}/join-team?inviteId=${teamInvite.id}`;
 
     if (sendEmail) {
-      await sendTeamInviteEmail(email, teamUrl, teamName);
+      await sendTeamInviteEmail(email, teamUrl, teamName, teamId);
     }
 
     return teamInvite;
@@ -330,7 +330,7 @@ export class TeamService {
 
     const teamUrl = `${env.NEXTAUTH_URL}/join-team?inviteId=${invite.id}`;
 
-    await sendTeamInviteEmail(invite.email, teamUrl, teamName);
+    await sendTeamInviteEmail(invite.email, teamUrl, teamName, teamId);
 
     return { success: true };
   }
