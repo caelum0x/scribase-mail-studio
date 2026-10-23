@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { api } from "~/trpc/react";
 import { getReviewPreviewSrcDoc } from "~/lib/email-preview";
 import Spinner from "@usesend/ui/src/spinner";
 import { Button } from "@usesend/ui/src/button";
-import { X } from "lucide-react";
+import { Textarea } from "@usesend/ui/src/textarea";
+import { toast } from "@usesend/ui/src/toaster";
+import { X, Reply, SendHorizonal } from "lucide-react";
 import { formatDate } from "date-fns";
 
 interface Props {
@@ -12,20 +15,109 @@ interface Props {
   onClose: () => void;
 }
 
+function extractBareAddress(address: string): string {
+  const match = address.match(/<([^>]+)>/);
+  return (match?.[1] ?? address).trim();
+}
+
+function ReplyComposer({
+  receivedEmailId,
+  fromAddress,
+  toAddress,
+  onDone,
+}: {
+  receivedEmailId: string;
+  fromAddress: string;
+  toAddress: string;
+  onDone: () => void;
+}) {
+  const [body, setBody] = useState("");
+  const replyMutation = api.receivedEmail.reply.useMutation();
+
+  function handleSend() {
+    if (!body.trim()) return;
+    replyMutation.mutate(
+      { id: receivedEmailId, from: fromAddress, text: body },
+      {
+        onSuccess: () => {
+          toast.success("Reply sent");
+          onDone();
+        },
+        onError: (err) => {
+          toast.error(err.message || "Failed to send reply");
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="border-t bg-muted/30 p-4 space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {fromAddress} &rarr; {toAddress}
+      </p>
+      <Textarea
+        autoFocus
+        rows={5}
+        placeholder="Write a reply…"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="icon" onClick={onDone} aria-label="Cancel">
+          <X className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          onClick={handleSend}
+          disabled={replyMutation.isPending || !body.trim()}
+          aria-label="Send reply"
+        >
+          {replyMutation.isPending ? (
+            <Spinner />
+          ) : (
+            <SendHorizonal className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function ReceivedEmailDetail({ id, onClose }: Props) {
   const { data, isLoading } = api.receivedEmail.get.useQuery({ id });
+  const [isReplying, setIsReplying] = useState(false);
   const rawHtml = (data as Record<string, unknown> | undefined)?.html;
   const previewSrcDoc =
     typeof rawHtml === "string" ? getReviewPreviewSrcDoc(rawHtml, null) : null;
+
+  const fromAddress =
+    typeof (data as Record<string, unknown> | undefined)?.to === "object"
+      ? (((data as Record<string, unknown>).to as string[])[0] ?? "")
+      : "";
+  const toAddress = data
+    ? extractBareAddress((data as Record<string, unknown>).from as string)
+    : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/30">
       <div className="h-full w-full max-w-2xl overflow-y-auto bg-background shadow-lg flex flex-col">
         <div className="flex items-center justify-between border-b p-4">
           <h2 className="font-semibold text-lg">Received Email</h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {data ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsReplying((v) => !v)}
+                aria-label="Reply"
+              >
+                <Reply className="h-4 w-4" />
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
@@ -112,6 +204,15 @@ export default function ReceivedEmailDetail({ id, onClose }: Props) {
             )}
           </div>
         )}
+
+        {isReplying && data ? (
+          <ReplyComposer
+            receivedEmailId={id}
+            fromAddress={fromAddress}
+            toAddress={toAddress}
+            onDone={() => setIsReplying(false)}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
   getReceivedEmails,
   getReceivedEmailById,
   toResendReceivedEmail,
+  replyToReceivedEmail,
 } from "~/server/service/received-email-service";
 import { setDomainReceiving } from "~/server/service/domain-receiving";
 
@@ -38,6 +39,29 @@ export const receivedEmailRouter = createTRPCRouter({
       const row = await getReceivedEmailById(ctx.team.id, input.id);
       if (!row) return null;
       return toResendReceivedEmail(row);
+    }),
+
+  /** Reply to a received email, threaded via In-Reply-To/References. */
+  reply: teamProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        from: z.string().email().or(z.string().min(3)),
+        to: z.string().email().optional(),
+        cc: z.array(z.string().email()).optional(),
+        text: z.string().optional(),
+        html: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const sent = await replyToReceivedEmail(ctx.team.id, input.id, {
+        from: input.from,
+        to: input.to,
+        cc: input.cc,
+        text: input.text,
+        html: input.html,
+      });
+      return { id: sent.id };
     }),
 
   /** Enable or disable receiving on a domain. */

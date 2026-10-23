@@ -11,6 +11,7 @@ import { WebhookService } from "./webhook-service";
 import { UnsendApiError } from "../public-api/api-error";
 import { getStorageSignedDownloadUrl } from "./inbound-storage-service";
 import { logger } from "~/server/logger/log";
+import { sendEmail } from "./email-service";
 
 export type AttachmentInput = {
   filename: string;
@@ -131,6 +132,7 @@ export async function persistReceivedEmail(
 
 const RECEIVED_SELECT = {
   id: true,
+  messageId: true,
   from: true,
   to: true,
   cc: true,
@@ -164,6 +166,7 @@ const RECEIVED_SELECT = {
 
 export type ReceivedEmailRow = {
   id: string;
+  messageId: string | null;
   from: string;
   to: string[];
   cc: string[];
@@ -294,4 +297,85 @@ export async function toResendReceivedEmail(row: ReceivedEmailRow): Promise<obje
     created_at: row.createdAt.toISOString(),
     attachments,
   };
+}
+
+// ─── Reply ────────────────────────────────────────────────────────────────
+
+/** Strip a display name and angle brackets, e.g. `"Jane" <jane@x.com>` -> `jane@x.com`. */
+function extractBareAddress(address: string): string {
+  const match = address.match(/<([^>]+)>/);
+  return (match?.[1] ?? address).trim();
+}
+
+/** Normalize a Message-ID into the bracketed form used in References/In-Reply-To. */
+function toBracketedMessageId(messageId: string): string {
+  const trimmed = messageId.trim();
+  return trimmed.startsWith("<") ? trimmed : `<${trimmed}>`;
+}
+
+export type ReplyToReceivedEmailInput = {
+  /** Verified sender address on this team's domain, e.g. the address the mail was received at. */
+  from: string;
+  /** Override the reply recipient; defaults to the original sender. */
+  to?: string;
+  cc?: string[];
+  text?: string;
+  html?: string;
+};
+
+/**
+ * Send a reply to a received (inbound) email, threaded via In-Reply-To /
+ * References headers so it lands in the same thread in the recipient's
+ * mail client. Reuses the existing outbound send pipeline (quota, screening,
+ * suppression checks all still apply).
+ */
+export async function replyToReceivedEmail(
+  teamId: number,
+  receivedEmailId: string,
+  input: ReplyToReceivedEmailInput,
+) {
+  const original = await getReceivedEmailById(teamId, receivedEmailId);
+  if (!original) {
+    throw new UnsendApiError({
+      code: "NOT_FOUND",
+      message: "Received email not found",
+    });
+  }
+
+  if (!input.text && !input.html) {
+    throw new UnsendApiError({
+      code: "BAD_REQUEST",
+      message: "Either text or html is required",
+    });
+  }
+
+  const replyTo = input.to ?? extractBareAddress(original.from);
+  const subject = /^re:/i.test(original.subject)
+    ? original.subject
+    : `Re: ${original.subject}`;
+
+  const headers: Record<string, string> = {};
+  if (original.messageId) {
+    const bracketed = toBracketedMessageId(original.messageId);
+    headers["In-Reply-To"] = bracketed;
+    headers["References"] = bracketed;
+  }
+
+  const sent = await sendEmail({
+    teamId,
+    from: input.from,
+    to: replyTo,
+    cc: input.cc,
+    subject,
+    text: input.text,
+    html: input.html,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+  });
+
+  logger.info(
+    { receivedEmailId, emailId: sent.id, teamId },
+    "Sent reply to received email",
+  );
+
+  return sent;
 }
