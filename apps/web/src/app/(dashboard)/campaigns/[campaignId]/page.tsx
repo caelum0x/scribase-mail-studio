@@ -22,6 +22,8 @@ import { Button } from "@usesend/ui/src/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@usesend/ui/src/card";
 import { EmailStatusBadge } from "../../emails/email-status-badge";
 import { AnimatePresence, motion } from "framer-motion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@usesend/ui/src/tabs";
+import CampaignLinkStats from "./campaign-link-stats";
 
 export default function CampaignDetailsPage({
   params,
@@ -272,14 +274,27 @@ export default function CampaignDetailsPage({
                 </Link>
               </div>
             </div>
-            <div className=" dark:bg-slate-50 overflow-auto text-black rounded border-t">
-              <iframe
-                className="w-full min-h-[600px]"
-                srcDoc={campaign.html ?? ""}
-                sandbox="allow-same-origin"
-                title="Campaign email preview"
-              />
-            </div>
+            <Tabs defaultValue="preview" className="w-full">
+              <TabsList>
+                <TabsTrigger value="preview">Preview</TabsTrigger>
+                <TabsTrigger value="links">
+                  Links{clickedCount > 0 ? ` (${clickedCount})` : ""}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="preview">
+                <div className=" dark:bg-slate-50 overflow-auto text-black rounded border-t">
+                  <iframe
+                    className="w-full min-h-[600px]"
+                    srcDoc={campaign.html ?? ""}
+                    sandbox="allow-same-origin"
+                    title="Campaign email preview"
+                  />
+                </div>
+              </TabsContent>
+              <TabsContent value="links">
+                <CampaignLinkStats campaignId={campaign.id} />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       )}

@@ -228,6 +228,47 @@ export const campaignRouter = createTRPCRouter({
     },
   ),
 
+  /**
+   * Per-link click breakdown for a campaign. Groups the `link` field already
+   * stored on every CLICKED EmailEvent (written by the /api/t/c redirect) by
+   * destination URL, so a sender can see which links in a broadcast actually
+   * got clicked instead of only a single aggregate "clicked" total.
+   */
+  linkStats: campaignProcedure.query(
+    async ({ ctx: { db, team, campaign } }) => {
+      const rows = await db.$queryRaw<
+        Array<{
+          url: string;
+          totalClicks: bigint;
+          uniqueClicks: bigint;
+        }>
+      >`
+        SELECT
+          ee.data->>'link' AS url,
+          COUNT(*)::bigint AS "totalClicks",
+          COUNT(DISTINCT ee."emailId")::bigint AS "uniqueClicks"
+        FROM "EmailEvent" ee
+        INNER JOIN "Email" e ON e.id = ee."emailId"
+        WHERE e."campaignId" = ${campaign.id}
+          AND e."teamId" = ${team.id}
+          AND ee.status = 'CLICKED'
+          AND ee.data->>'link' IS NOT NULL
+        GROUP BY ee.data->>'link'
+        ORDER BY "totalClicks" DESC
+      `;
+
+      const delivered = campaign.delivered ?? 0;
+
+      return rows.map((row) => ({
+        url: row.url,
+        totalClicks: Number(row.totalClicks),
+        uniqueClicks: Number(row.uniqueClicks),
+        clickRate:
+          delivered > 0 ? (Number(row.uniqueClicks) / delivered) * 100 : 0,
+      }));
+    },
+  ),
+
   reSubscribeContact: publicProcedure
     .input(
       z.object({
