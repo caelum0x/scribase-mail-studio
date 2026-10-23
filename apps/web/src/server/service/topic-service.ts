@@ -9,6 +9,14 @@
 import { TopicSubscription, TopicVisibility } from "@prisma/client";
 import { db } from "../db";
 import { UnsendApiError } from "../public-api/api-error";
+import { verifyUnsubscribeLink } from "./campaign-service";
+
+export type PublicTopicPreference = {
+  id: string;
+  name: string;
+  description: string | null;
+  subscribed: boolean;
+};
 
 export type CreateTopicInput = {
   name: string;
@@ -128,5 +136,113 @@ export class TopicService {
 
     const subscription = row?.subscription ?? topic.defaultSubscription;
     return subscription === TopicSubscription.OPT_OUT;
+  }
+
+  // ── Public preference center (unsubscribe link reuse) ───────────────────
+
+  /**
+   * Resolves the team + contact behind a signed unsubscribe link, re-using
+   * the same HMAC the one-click/unsubscribe links already carry so the
+   * preference center never needs its own auth scheme.
+   */
+  private static async resolveContactFromLink(id: string, hash: string) {
+    const { contactId } = verifyUnsubscribeLink(id, hash);
+    const contact = await db.contact.findUnique({
+      where: { id: contactId },
+      include: { contactBook: { select: { teamId: true } } },
+    });
+    if (!contact) {
+      throw new UnsendApiError({ code: "NOT_FOUND", message: "Contact not found" });
+    }
+    return contact;
+  }
+
+  /**
+   * Public, granular alternative to the all-or-nothing unsubscribe link:
+   * returns every PUBLIC topic for the contact's team with their current
+   * subscription state (defaulting to the topic's `defaultSubscription`).
+   */
+  static async getPublicPreferencesFromLink(
+    id: string,
+    hash: string,
+  ): Promise<{ email: string; topics: PublicTopicPreference[] }> {
+    const contact = await TopicService.resolveContactFromLink(id, hash);
+    const teamId = contact.contactBook.teamId;
+
+    const topics = await db.topic.findMany({
+      where: { teamId, visibility: TopicVisibility.PUBLIC },
+      orderBy: { name: "asc" },
+    });
+
+    if (topics.length === 0) {
+      return { email: contact.email, topics: [] };
+    }
+
+    const prefs = await db.contactTopic.findMany({
+      where: { contactId: contact.id, topicId: { in: topics.map((t) => t.id) } },
+    });
+    const prefMap = new Map(prefs.map((p) => [p.topicId, p.subscription]));
+
+    return {
+      email: contact.email,
+      topics: topics.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        subscribed:
+          (prefMap.get(t.id) ?? t.defaultSubscription) ===
+          TopicSubscription.OPT_IN,
+      })),
+    };
+  }
+
+  /**
+   * Saves per-topic opt in/out choices from the public preference center.
+   * Silently ignores any topicId that doesn't belong to the contact's team
+   * or isn't PUBLIC, so a tampered request can't flip private topics.
+   */
+  static async updatePublicPreferencesFromLink(
+    id: string,
+    hash: string,
+    updates: Array<{ topicId: string; subscribed: boolean }>,
+  ): Promise<{ success: true }> {
+    const contact = await TopicService.resolveContactFromLink(id, hash);
+    const teamId = contact.contactBook.teamId;
+
+    const validTopics = await db.topic.findMany({
+      where: {
+        id: { in: updates.map((u) => u.topicId) },
+        teamId,
+        visibility: TopicVisibility.PUBLIC,
+      },
+      select: { id: true },
+    });
+    const validIds = new Set(validTopics.map((t) => t.id));
+
+    await Promise.all(
+      updates
+        .filter((u) => validIds.has(u.topicId))
+        .map((u) =>
+          db.contactTopic.upsert({
+            where: {
+              contactId_topicId: { contactId: contact.id, topicId: u.topicId },
+            },
+            create: {
+              contactId: contact.id,
+              topicId: u.topicId,
+              subscription: u.subscribed
+                ? TopicSubscription.OPT_IN
+                : TopicSubscription.OPT_OUT,
+            },
+            update: {
+              subscription: u.subscribed
+                ? TopicSubscription.OPT_IN
+                : TopicSubscription.OPT_OUT,
+            },
+          }),
+        ),
+    );
+
+    return { success: true };
   }
 }

@@ -19,6 +19,8 @@ import { webhookRouter } from "./routers/webhook";
 import { receivedEmailRouter } from "./routers/received-email";
 import { mfaRouter } from "./routers/mfa";
 import { auditRouter } from "./routers/audit";
+import { topicRouter } from "./routers/topic";
+import { segmentRouter } from "./routers/segment";
 
 /**
  * This is the primary router for your server.
@@ -46,6 +48,8 @@ export const appRouter = createTRPCRouter({
   receivedEmail: receivedEmailRouter,
   mfa: mfaRouter,
   audit: auditRouter,
+  topic: topicRouter,
+  segment: segmentRouter,
 });
 
 // export type definition of API

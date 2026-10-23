@@ -581,7 +581,7 @@ export function createOneClickUnsubUrl(contactId: string, campaignId: string) {
   return `${env.NEXTAUTH_URL}/api/unsubscribe-oneclick?id=${unsubId}&hash=${unsubHash}`;
 }
 
-function verifyUnsubscribeLink(id: string, hash: string) {
+export function verifyUnsubscribeLink(id: string, hash: string) {
   const [contactId, campaignId] = id.split("-");
 
   if (!contactId || !campaignId) {

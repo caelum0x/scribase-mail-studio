@@ -7,6 +7,7 @@ import {
 } from "~/server/service/campaign-service";
 import ReSubscribe from "./re-subscribe";
 import UnsubscribeButton from "./unsubscribe-button";
+import TopicPreferences from "./topic-preferences";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,7 @@ export default async function UnsubscribePage({
   const error = getSingleValue(params.error);
 
   let content: ReactNode;
+  let linkValid = false;
 
   if (!id || !hash) {
     content = (
@@ -112,6 +114,7 @@ export default async function UnsubscribePage({
   } else {
     try {
       const contact = await getContactFromUnsubscribeLink(id, hash);
+      linkValid = true;
 
       if (!contact.subscribed) {
         content = <ReSubscribe id={id} hash={hash} contact={contact} />;
@@ -156,8 +159,12 @@ export default async function UnsubscribePage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-6">
       {content}
+
+      {linkValid && id && hash ? (
+        <TopicPreferences id={id} hash={hash} />
+      ) : null}
 
       <div className="fixed bottom-10 p-4 text-sm">
         <p>
