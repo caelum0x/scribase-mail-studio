@@ -47,6 +47,7 @@ const { mockGetTeamFromToken, mockRedis, mockDb } = vi.hoisted(() => ({
     contactTopic: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       upsert: vi.fn(),
     },
     // segments
@@ -153,7 +154,8 @@ vi.mock("~/server/service/content-screening-service", () => ({
   ContentScreeningService: { assertSendable: vi.fn() },
 }));
 vi.mock("~/server/service/campaign-service", async (importOriginal) => {
-  const original = await importOriginal<typeof import("~/server/service/campaign-service")>();
+  const original =
+    await importOriginal<typeof import("~/server/service/campaign-service")>();
   return {
     ...original,
     createCampaignFromApi: vi.fn(),
@@ -209,16 +211,26 @@ function setup() {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = new Request(input, init);
     const url = new URL(req.url);
-    const rewritten = new URL(`${PREFIX}${url.pathname}${url.search}`, "http://localhost");
+    const rewritten = new URL(
+      `${PREFIX}${url.pathname}${url.search}`,
+      "http://localhost",
+    );
     return app.fetch(new Request(rewritten, req));
   }) as typeof fetch;
 
-  return { restore: () => { globalThis.fetch = realFetch; } };
+  return {
+    restore: () => {
+      globalThis.fetch = realFetch;
+    },
+  };
 }
 
 function api(path: string, init?: RequestInit) {
   return fetch(`${BASE}${path}`, {
-    headers: { Authorization: "Bearer us_test", "Content-Type": "application/json" },
+    headers: {
+      Authorization: "Bearer us_test",
+      "Content-Type": "application/json",
+    },
     ...init,
   });
 }
@@ -317,6 +329,140 @@ describe("topics", () => {
     mockDb.topic.delete.mockResolvedValue(TOPIC);
     const res = await del("/topics/top_1");
     expect(res.status).toBe(200);
+  });
+});
+
+describe("contact topics (resend.contacts.topics)", () => {
+  const TOPIC = {
+    id: "top_1",
+    teamId: 1,
+    name: "Newsletter",
+    description: "Weekly notes",
+    defaultSubscription: "OPT_IN" as const,
+    visibility: "PRIVATE" as const,
+    createdAt: new Date("2026-10-07T00:00:00Z"),
+    updatedAt: new Date("2026-10-07T00:00:00Z"),
+  };
+  const TOPIC_OUT = {
+    ...TOPIC,
+    id: "top_2",
+    name: "Product",
+    description: null,
+    defaultSubscription: "OPT_OUT" as const,
+    createdAt: new Date("2026-10-06T00:00:00Z"),
+  };
+  const CONTACT = {
+    id: "con_1",
+    email: "alice@example.com",
+    contactBookId: "book_default",
+  };
+
+  beforeEach(() => {
+    mockDb.contactBook.findFirst.mockResolvedValue({ id: "book_default" });
+  });
+
+  it("GET /contacts/:id/topics uses an explicit opt-in over an opt-out default", async () => {
+    mockDb.contact.findFirst.mockResolvedValue(CONTACT);
+    mockDb.topic.findMany.mockResolvedValue([TOPIC, TOPIC_OUT]);
+    mockDb.contactTopic.findMany.mockResolvedValue([
+      { contactId: "con_1", topicId: "top_2", subscription: "OPT_IN" },
+    ]);
+
+    const res = await api("/contacts/con_1/topics?limit=1");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      object: "list",
+      has_more: true,
+      data: [
+        {
+          id: "top_1",
+          name: "Newsletter",
+          description: "Weekly notes",
+          subscription: "opt_in",
+        },
+      ],
+    });
+  });
+
+  it("GET /contacts/:email/topics resolves the contact by email", async () => {
+    mockDb.contact.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(CONTACT);
+    mockDb.topic.findMany.mockResolvedValue([TOPIC_OUT]);
+    mockDb.contactTopic.findMany.mockResolvedValue([]);
+
+    const res = await api("/contacts/alice@example.com/topics");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toEqual([
+      {
+        id: "top_2",
+        name: "Product",
+        description: null,
+        subscription: "opt_out",
+      },
+    ]);
+    expect(mockDb.contact.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        email: "alice@example.com",
+        contactBookId: "book_default",
+      },
+    });
+  });
+
+  it("GET /contacts/:id/topics returns 404 when the contact does not exist", async () => {
+    mockDb.contact.findFirst.mockResolvedValue(null);
+    const res = await api("/contacts/missing/topics");
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.name).toBe("not_found");
+    expect(mockDb.topic.findMany).not.toHaveBeenCalled();
+  });
+
+  it("PATCH /contacts/:id/topics stores opt_out and returns the contact id", async () => {
+    mockDb.contact.findFirst.mockResolvedValue(CONTACT);
+    mockDb.topic.findFirst.mockResolvedValue(TOPIC);
+    mockDb.contactTopic.upsert.mockResolvedValue({});
+
+    const res = await patch("/contacts/con_1/topics", [
+      { id: "top_1", subscription: "opt_out" },
+    ]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ object: "contact_topics", id: "con_1" });
+    expect(mockDb.contactTopic.upsert).toHaveBeenCalledWith({
+      where: { contactId_topicId: { contactId: "con_1", topicId: "top_1" } },
+      create: {
+        contactId: "con_1",
+        topicId: "top_1",
+        subscription: "OPT_OUT",
+      },
+      update: { subscription: "OPT_OUT" },
+    });
+  });
+
+  it("PATCH /contacts/:id/topics does not write when a topic is missing", async () => {
+    mockDb.contact.findFirst.mockResolvedValue(CONTACT);
+    mockDb.topic.findFirst
+      .mockResolvedValueOnce(TOPIC)
+      .mockResolvedValueOnce(null);
+
+    const res = await patch("/contacts/con_1/topics", [
+      { id: "top_1", subscription: "opt_in" },
+      { id: "top_missing", subscription: "opt_out" },
+    ]);
+    expect(res.status).toBe(404);
+    expect(mockDb.contactTopic.upsert).not.toHaveBeenCalled();
+  });
+
+  it("PATCH /contacts/:id/topics rejects a subscription the SDK does not send", async () => {
+    mockDb.contact.findFirst.mockResolvedValue(CONTACT);
+    const res = await patch("/contacts/con_1/topics", [
+      { id: "top_1", subscription: "maybe" },
+    ]);
+    expect(res.status).toBe(422);
+    expect(mockDb.topic.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.contactTopic.upsert).not.toHaveBeenCalled();
   });
 });
 
@@ -441,7 +587,9 @@ describe("contacts", () => {
     const res = await api("/contacts/missing");
     // missing contact → 404, but the book was created
     expect(mockDb.contactBook.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ isDefault: true }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ isDefault: true }),
+      }),
     );
     expect(res.status).toBe(404);
   });
@@ -462,7 +610,10 @@ describe("contact-properties", () => {
 
   it("POST /contact-properties creates property", async () => {
     mockDb.contactProperty.create.mockResolvedValue(PROP);
-    const res = await post("/contact-properties", { key: "plan", type: "string" });
+    const res = await post("/contact-properties", {
+      key: "plan",
+      type: "string",
+    });
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.object).toBe("contact_property");
@@ -479,7 +630,10 @@ describe("contact-properties", () => {
   });
 
   it("rejects invalid key format", async () => {
-    const res = await post("/contact-properties", { key: "123-bad", type: "string" });
+    const res = await post("/contact-properties", {
+      key: "123-bad",
+      type: "string",
+    });
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.name).toBe("validation_error");
@@ -543,7 +697,10 @@ describe("templates", () => {
       createdAt: new Date("2026-10-07T00:00:00Z"),
     };
     mockDb.templateVersion.create.mockResolvedValue(VERSION);
-    mockDb.template.update.mockResolvedValue({ ...TMPL, publishedAt: VERSION.publishedAt });
+    mockDb.template.update.mockResolvedValue({
+      ...TMPL,
+      publishedAt: VERSION.publishedAt,
+    });
     const res = await post("/templates/tmpl_1/publish", {});
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -553,7 +710,12 @@ describe("templates", () => {
 
   it("POST /templates/:id/duplicate creates a copy", async () => {
     mockDb.template.findFirst.mockResolvedValue(TMPL);
-    mockDb.template.create.mockResolvedValue({ ...TMPL, id: "tmpl_2", name: "Welcome (copy)", alias: null });
+    mockDb.template.create.mockResolvedValue({
+      ...TMPL,
+      id: "tmpl_2",
+      name: "Welcome (copy)",
+      alias: null,
+    });
     const res = await post("/templates/tmpl_1/duplicate", {});
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -586,20 +748,14 @@ describe("TemplateService.applyVariables", async () => {
   });
 
   it("uses fallback_value when var is absent", () => {
-    const result = TemplateService.applyVariables(
-      "Hello {{{name}}}",
-      {},
-      [{ key: "name", type: "string", fallback_value: "Friend" }],
-    );
+    const result = TemplateService.applyVariables("Hello {{{name}}}", {}, [
+      { key: "name", type: "string", fallback_value: "Friend" },
+    ]);
     expect(result).toBe("Hello Friend");
   });
 
   it("leaves placeholder intact when no value and no fallback", () => {
-    const result = TemplateService.applyVariables(
-      "Hello {{{name}}}",
-      {},
-      [],
-    );
+    const result = TemplateService.applyVariables("Hello {{{name}}}", {}, []);
     expect(result).toBe("Hello {{{name}}}");
   });
 });
@@ -631,7 +787,9 @@ describe("broadcasts", () => {
   };
 
   it("POST /broadcasts creates broadcast", async () => {
-    vi.mocked(campaignService.createCampaignFromApi).mockResolvedValue(CAMP as never);
+    vi.mocked(campaignService.createCampaignFromApi).mockResolvedValue(
+      CAMP as never,
+    );
     mockDb.campaign.update.mockResolvedValue(CAMP);
     mockDb.campaign.findUniqueOrThrow.mockResolvedValue(CAMP);
     const res = await post("/broadcasts", {
@@ -677,7 +835,11 @@ describe("broadcasts", () => {
 
   it("POST /broadcasts/:id/duplicate creates copy", async () => {
     mockDb.campaign.findFirst.mockResolvedValue(CAMP);
-    mockDb.campaign.create.mockResolvedValue({ ...CAMP, id: "camp_2", name: "Product Launch (copy)" });
+    mockDb.campaign.create.mockResolvedValue({
+      ...CAMP,
+      id: "camp_2",
+      name: "Product Launch (copy)",
+    });
     const res = await post("/broadcasts/camp_1/duplicate", {});
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -731,11 +893,13 @@ describe("attachments", () => {
 describe("share", () => {
   it("POST /emails/:id/share returns a URL", async () => {
     mockDb.email.findFirst.mockResolvedValue({ id: "em_1" });
-    mockDb.emailShare.create.mockImplementation(async ({ data }: { data: { token: string; expiresAt: Date } }) => ({
-      id: "share_1",
-      token: data.token,
-      expiresAt: data.expiresAt,
-    }));
+    mockDb.emailShare.create.mockImplementation(
+      async ({ data }: { data: { token: string; expiresAt: Date } }) => ({
+        id: "share_1",
+        token: data.token,
+        expiresAt: data.expiresAt,
+      }),
+    );
     const res = await post("/emails/em_1/share", {});
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -750,13 +914,25 @@ describe("share", () => {
 
 describe("metrics", () => {
   it("GET /emails/metrics returns metrics", async () => {
-    const { emailTimeSeries } = await import("~/server/service/dashboard-service");
-    const { reputationMetricsData } = await import("~/server/service/dashboard-service");
+    const { emailTimeSeries } =
+      await import("~/server/service/dashboard-service");
+    const { reputationMetricsData } =
+      await import("~/server/service/dashboard-service");
     vi.mocked(emailTimeSeries).mockResolvedValue({
       result: [],
-      totalCounts: { sent: 100, delivered: 95, opened: 30, clicked: 10, bounced: 5, complained: 0 },
+      totalCounts: {
+        sent: 100,
+        delivered: 95,
+        opened: 30,
+        clicked: 10,
+        bounced: 5,
+        complained: 0,
+      },
     });
-    vi.mocked(reputationMetricsData).mockResolvedValue({ deliveryRate: 0.95, openRate: 0.315 } as never);
+    vi.mocked(reputationMetricsData).mockResolvedValue({
+      deliveryRate: 0.95,
+      openRate: 0.315,
+    } as never);
 
     const res = await api("/emails/metrics?days=7");
     expect(res.status).toBe(200);
@@ -776,7 +952,8 @@ describe("metrics", () => {
 // ── Personalization helpers ───────────────────────────────────────────────────
 
 describe("applyResendPersonalization", async () => {
-  const { applyResendPersonalization } = await import("~/server/service/personalization");
+  const { applyResendPersonalization } =
+    await import("~/server/service/personalization");
 
   it("substitutes contact.first_name", () => {
     const result = applyResendPersonalization(
@@ -798,7 +975,7 @@ describe("applyResendPersonalization", async () => {
 
   it("substitutes RESEND_UNSUBSCRIBE_URL", () => {
     const result = applyResendPersonalization(
-      "<a href=\"{{{RESEND_UNSUBSCRIBE_URL}}}\">Unsub</a>",
+      '<a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Unsub</a>',
       {},
       "https://example.com/unsub?id=1",
     );
