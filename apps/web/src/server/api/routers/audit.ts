@@ -63,8 +63,59 @@ export const auditRouter = createTRPCRouter({
       });
 
       const hasMore = rows.length > input.limit;
-      const data = hasMore ? rows.slice(0, input.limit) : rows;
-      const nextCursor = hasMore ? data[data.length - 1]?.id : undefined;
+      const page = hasMore ? rows.slice(0, input.limit) : rows;
+      const nextCursor = hasMore ? page[page.length - 1]?.id : undefined;
+
+      const userIds = Array.from(
+        new Set(
+          page
+            .map((r) => r.actorUserId)
+            .filter((id): id is number => id !== null),
+        ),
+      );
+      const apiKeyIds = Array.from(
+        new Set(
+          page
+            .map((r) => r.actorApiKeyId)
+            .filter((id): id is number => id !== null),
+        ),
+      );
+
+      const [users, apiKeys] = await Promise.all([
+        userIds.length > 0
+          ? db.user.findMany({
+              where: { id: { in: userIds } },
+              select: { id: true, name: true, email: true },
+            })
+          : Promise.resolve([]),
+        apiKeyIds.length > 0
+          ? db.apiKey.findMany({
+              where: { id: { in: apiKeyIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const userMap = new Map(users.map((u) => [u.id, u]));
+      const apiKeyMap = new Map(apiKeys.map((k) => [k.id, k]));
+
+      const data = page.map((row) => {
+        const actorUser = row.actorUserId
+          ? userMap.get(row.actorUserId)
+          : undefined;
+        const actorApiKey = row.actorApiKeyId
+          ? apiKeyMap.get(row.actorApiKeyId)
+          : undefined;
+        const actorName =
+          row.actorType === "USER"
+            ? actorUser?.name || actorUser?.email || "Unknown user"
+            : row.actorType === "API_KEY"
+              ? actorApiKey?.name
+                ? `API key: ${actorApiKey.name}`
+                : "API key"
+              : "System";
+        return { ...row, actorName };
+      });
 
       return { data, nextCursor, hasMore, retentionDays: AUDIT_LOG_RETENTION_DAYS };
     }),
