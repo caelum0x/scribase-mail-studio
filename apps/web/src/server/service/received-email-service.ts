@@ -9,9 +9,13 @@
 import { db } from "~/server/db";
 import { WebhookService } from "./webhook-service";
 import { UnsendApiError } from "../public-api/api-error";
-import { getStorageSignedDownloadUrl } from "./inbound-storage-service";
+import {
+  getStorageSignedDownloadUrl,
+  getStorageObjectBytes,
+} from "./inbound-storage-service";
 import { logger } from "~/server/logger/log";
 import { sendEmail } from "./email-service";
+import type { EmailAttachment } from "~/types";
 
 export type AttachmentInput = {
   filename: string;
@@ -406,6 +410,141 @@ export async function replyToReceivedEmail(
   logger.info(
     { receivedEmailId, emailId: sent.id, teamId },
     "Sent reply to received email",
+  );
+
+  return sent;
+}
+
+// ─── Forward ──────────────────────────────────────────────────────────────
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Classic "forwarded message" quote header, à la Gmail/Outlook. */
+function buildForwardedHeaderBlock(original: ReceivedEmailRow): string {
+  return [
+    "---------- Forwarded message ---------",
+    `From: ${original.from}`,
+    `Date: ${original.createdAt.toUTCString()}`,
+    `Subject: ${original.subject}`,
+    `To: ${original.to.join(", ")}`,
+  ].join("\n");
+}
+
+export type ForwardReceivedEmailInput = {
+  /** Verified sender address on this team's domain. */
+  from: string;
+  /** Forward recipient(s). */
+  to: string | string[];
+  cc?: string[];
+  /** Optional note prepended above the quoted original message. */
+  comment?: string;
+};
+
+/**
+ * Forward a received (inbound) email to a new recipient, carrying over the
+ * original attachments by reading their bytes from the inbound storage
+ * object directly (`getStorageObjectBytes`) rather than re-uploading them
+ * anywhere — the storage key on `ReceivedEmailAttachment` is reused as-is,
+ * just read once to build the outgoing MIME attachment. Goes through the
+ * normal outbound send pipeline (quota, screening, suppression checks all
+ * apply, same as a regular send or a reply).
+ */
+export async function forwardReceivedEmail(
+  teamId: number,
+  receivedEmailId: string,
+  input: ForwardReceivedEmailInput,
+) {
+  const original = await getReceivedEmailById(teamId, receivedEmailId);
+  if (!original) {
+    throw new UnsendApiError({
+      code: "NOT_FOUND",
+      message: "Received email not found",
+    });
+  }
+
+  const toAddresses = (Array.isArray(input.to) ? input.to : [input.to])
+    .map((addr) => addr.trim())
+    .filter((addr) => addr.length > 0);
+  if (toAddresses.length === 0) {
+    throw new UnsendApiError({
+      code: "BAD_REQUEST",
+      message: "`to` is required",
+    });
+  }
+
+  const subject = /^fwd:/i.test(original.subject)
+    ? original.subject
+    : `Fwd: ${original.subject}`;
+
+  const comment = input.comment?.trim();
+  const headerBlock = buildForwardedHeaderBlock(original);
+
+  let text: string | undefined;
+  let html: string | undefined;
+
+  if (original.html) {
+    const commentHtml = comment ? `<p>${escapeHtml(comment)}</p>` : "";
+    const headerHtml = headerBlock
+      .split("\n")
+      .map((line) => escapeHtml(line))
+      .join("<br/>");
+    html = `${commentHtml}<p>${headerHtml}</p>${original.html}`;
+    text = original.text
+      ? `${comment ? `${comment}\n\n` : ""}${headerBlock}\n\n${original.text}`
+      : undefined;
+  } else {
+    text = `${comment ? `${comment}\n\n` : ""}${headerBlock}${
+      original.text ? `\n\n${original.text}` : ""
+    }`;
+  }
+
+  // Reuse the original attachment bytes by storage key — read once, no
+  // re-upload. Non-fatal per-attachment: a storage read failure drops that
+  // one attachment instead of blocking the whole forward.
+  const attachmentResults = await Promise.all(
+    original.attachments.map(async (att): Promise<EmailAttachment | null> => {
+      try {
+        const bytes = await getStorageObjectBytes(att.storageKey);
+        return {
+          filename: att.filename,
+          content: bytes.toString("base64"),
+          ...(att.contentType ? { contentType: att.contentType } : {}),
+          ...(att.contentId
+            ? { cid: att.contentId.replace(/[<>]/g, "") }
+            : {}),
+        };
+      } catch (err) {
+        logger.error(
+          { err, receivedEmailId, attachmentId: att.id },
+          "Failed to read inbound attachment for forward; skipping it",
+        );
+        return null;
+      }
+    }),
+  );
+  const attachments = attachmentResults.filter(
+    (att): att is EmailAttachment => att !== null,
+  );
+
+  const sent = await sendEmail({
+    teamId,
+    from: input.from,
+    to: toAddresses,
+    cc: input.cc,
+    subject,
+    text,
+    html,
+    attachments: attachments.length > 0 ? attachments : undefined,
+  });
+
+  logger.info(
+    { receivedEmailId, emailId: sent.id, teamId, attachmentCount: attachments.length },
+    "Forwarded received email",
   );
 
   return sent;

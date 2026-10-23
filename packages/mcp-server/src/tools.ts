@@ -332,4 +332,28 @@ export function registerTools(server: McpServer, client: ScribaseMailClient): vo
       );
     },
   );
+
+  server.tool(
+    "forward_received_email",
+    "Forward an inbound email to a new recipient, carrying over the " +
+      "original attachments. Goes through the normal send pipeline (quota, " +
+      "screening, suppression checks all apply).",
+    {
+      id: z.string().describe("Received email ID to forward"),
+      from: z
+        .string()
+        .describe("Verified sender address on one of your domains"),
+      to: addressListSchema.describe("Forward recipient(s)"),
+      cc: addressListSchema.optional(),
+      comment: z
+        .string()
+        .optional()
+        .describe("Optional note prepended above the quoted original message"),
+    },
+    async ({ id, from, to, cc, comment }) => {
+      return call(() =>
+        client.post(`/emails/received/${id}/forward`, { from, to, cc, comment }),
+      );
+    },
+  );
 }

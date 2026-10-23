@@ -8,6 +8,7 @@
  *   GET  /emails/received/:id/attachments       — list attachments
  *   GET  /emails/received/:id/attachments/:aid  — get one attachment
  *   POST /emails/received/:id/reply    — reply to a received email (Scribase Mail extension)
+ *   POST /emails/received/:id/forward  — forward a received email (Scribase Mail extension)
  *
  * All endpoints require a team API key with `FULL` permission.
  */
@@ -18,6 +19,7 @@ import {
   getReceivedEmails,
   getReceivedEmailById,
   replyToReceivedEmail,
+  forwardReceivedEmail,
   toResendReceivedEmail,
 } from "~/server/service/received-email-service";
 import { getStorageSignedDownloadUrl } from "~/server/service/inbound-storage-service";
@@ -31,6 +33,13 @@ const replyToReceivedEmailSchema = z.object({
   cc: z.union([z.string(), z.array(z.string())]).optional(),
   text: z.string().optional(),
   html: z.string().optional(),
+});
+
+const forwardReceivedEmailSchema = z.object({
+  from: z.string().min(1, "`from` is required"),
+  to: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  cc: z.union([z.string(), z.array(z.string())]).optional(),
+  comment: z.string().optional(),
 });
 
 export function registerReceivedEmailRoutes(app: ResendApp): void {
@@ -78,6 +87,30 @@ export function registerReceivedEmailRoutes(app: ResendApp): void {
       cc,
       text: body.text,
       html: body.html,
+    });
+
+    return c.json({ id: sent.id }, 200);
+  });
+
+  // POST /emails/received/:id/forward — forward a received email to a new
+  // recipient, carrying the original attachments over by storage key (read
+  // once, no re-upload). Scribase Mail extension; not part of the Resend
+  // API proper. Reuses the native send pipeline (quota, screening,
+  // suppression checks all apply).
+  app.post("/emails/received/:id/forward", async (c) => {
+    const team = c.var.team;
+    const body = forwardReceivedEmailSchema.parse(await readJsonBody(c));
+    const cc = Array.isArray(body.cc)
+      ? body.cc
+      : body.cc
+        ? [body.cc]
+        : undefined;
+
+    const sent = await forwardReceivedEmail(team.id, c.req.param("id"), {
+      from: body.from,
+      to: body.to,
+      cc,
+      comment: body.comment,
     });
 
     return c.json({ id: sent.id }, 200);

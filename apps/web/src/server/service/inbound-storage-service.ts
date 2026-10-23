@@ -13,7 +13,7 @@ import { readOciConfig } from "~/server/provider/oci/config";
 import { createOciAuthProvider } from "~/server/provider/oci/factory";
 import { logger } from "~/server/logger/log";
 import path from "path";
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 
 const DOWNLOAD_URL_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -70,6 +70,59 @@ export async function getStorageSignedDownloadUrl(
   const localDir =
     process.env.INBOUND_STORAGE_DIR ?? "/tmp/scribase-inbound";
   return `file://${path.join(localDir, storageKey)}`;
+}
+
+/**
+ * Collect a Node Readable (or web ReadableStream) into a single Buffer.
+ */
+function streamToBuffer(
+  stream: NodeJS.ReadableStream | ReadableStream<Uint8Array>,
+): Promise<Buffer> {
+  // Web ReadableStream (rare for the OCI SDK, but typed as a possibility).
+  if (typeof (stream as ReadableStream<Uint8Array>).getReader === "function") {
+    return (async () => {
+      const reader = (stream as ReadableStream<Uint8Array>).getReader();
+      const chunks: Uint8Array[] = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+      return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+    })();
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const nodeStream = stream as NodeJS.ReadableStream;
+    nodeStream.on("data", (chunk) =>
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
+    );
+    nodeStream.on("end", () => resolve(Buffer.concat(chunks)));
+    nodeStream.on("error", reject);
+  });
+}
+
+/**
+ * Read the raw bytes of a previously stored inbound object (attachment or
+ * raw .eml). Used by the forward action, which re-sends the original
+ * attachment bytes without re-uploading them anywhere.
+ */
+export async function getStorageObjectBytes(storageKey: string): Promise<Buffer> {
+  const client = getClient();
+
+  if (client && env.OCI_STORAGE_NAMESPACE && env.OCI_STORAGE_BUCKET) {
+    const response = await client.getObject({
+      namespaceName: env.OCI_STORAGE_NAMESPACE,
+      bucketName: env.OCI_STORAGE_BUCKET,
+      objectName: storageKey,
+    });
+    return streamToBuffer(response.value);
+  }
+
+  // Dev fallback: read from local disk.
+  const localDir = process.env.INBOUND_STORAGE_DIR ?? "/tmp/scribase-inbound";
+  return readFileSync(path.join(localDir, storageKey));
 }
 
 /**

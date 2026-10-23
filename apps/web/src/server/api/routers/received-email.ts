@@ -13,6 +13,7 @@ import {
   getReceivedEmailById,
   toResendReceivedEmail,
   replyToReceivedEmail,
+  forwardReceivedEmail,
 } from "~/server/service/received-email-service";
 import { setDomainReceiving } from "~/server/service/domain-receiving";
 
@@ -60,6 +61,27 @@ export const receivedEmailRouter = createTRPCRouter({
         cc: input.cc,
         text: input.text,
         html: input.html,
+      });
+      return { id: sent.id };
+    }),
+
+  /** Forward a received email to a new recipient, carrying attachments. */
+  forward: teamProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        from: z.string().email().or(z.string().min(3)),
+        to: z.union([z.string().email(), z.array(z.string().email()).min(1)]),
+        cc: z.array(z.string().email()).optional(),
+        comment: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const sent = await forwardReceivedEmail(ctx.team.id, input.id, {
+        from: input.from,
+        to: input.to,
+        cc: input.cc,
+        comment: input.comment,
       });
       return { id: sent.id };
     }),

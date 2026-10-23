@@ -6,8 +6,9 @@ import { getReviewPreviewSrcDoc } from "~/lib/email-preview";
 import Spinner from "@usesend/ui/src/spinner";
 import { Button } from "@usesend/ui/src/button";
 import { Textarea } from "@usesend/ui/src/textarea";
+import { Input } from "@usesend/ui/src/input";
 import { toast } from "@usesend/ui/src/toaster";
-import { X, Reply, SendHorizonal } from "lucide-react";
+import { X, Reply, Forward, SendHorizonal } from "lucide-react";
 import { formatDate } from "date-fns";
 
 interface Props {
@@ -83,9 +84,80 @@ function ReplyComposer({
   );
 }
 
+function ForwardComposer({
+  receivedEmailId,
+  fromAddress,
+  onDone,
+}: {
+  receivedEmailId: string;
+  fromAddress: string;
+  onDone: () => void;
+}) {
+  const [to, setTo] = useState("");
+  const [comment, setComment] = useState("");
+  const forwardMutation = api.receivedEmail.forward.useMutation();
+
+  function handleSend() {
+    if (!to.trim()) return;
+    forwardMutation.mutate(
+      {
+        id: receivedEmailId,
+        from: fromAddress,
+        to: to.trim(),
+        comment: comment.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success("Email forwarded");
+          onDone();
+        },
+        onError: (err) => {
+          toast.error(err.message || "Failed to forward email");
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="border-t bg-muted/30 p-4 space-y-2">
+      <Input
+        autoFocus
+        type="email"
+        placeholder="Forward to…"
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+      />
+      <Textarea
+        rows={3}
+        placeholder="Add a note (optional)…"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="icon" onClick={onDone} aria-label="Cancel">
+          <X className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          onClick={handleSend}
+          disabled={forwardMutation.isPending || !to.trim()}
+          aria-label="Send forward"
+        >
+          {forwardMutation.isPending ? (
+            <Spinner />
+          ) : (
+            <SendHorizonal className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function ReceivedEmailDetail({ id, onClose }: Props) {
   const { data, isLoading } = api.receivedEmail.get.useQuery({ id });
   const [isReplying, setIsReplying] = useState(false);
+  const [isForwarding, setIsForwarding] = useState(false);
   const rawHtml = (data as Record<string, unknown> | undefined)?.html;
   const previewSrcDoc =
     typeof rawHtml === "string" ? getReviewPreviewSrcDoc(rawHtml, null) : null;
@@ -105,14 +177,30 @@ export default function ReceivedEmailDetail({ id, onClose }: Props) {
           <h2 className="font-semibold text-lg">Received Email</h2>
           <div className="flex items-center gap-1">
             {data ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsReplying((v) => !v)}
-                aria-label="Reply"
-              >
-                <Reply className="h-4 w-4" />
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setIsReplying((v) => !v);
+                    setIsForwarding(false);
+                  }}
+                  aria-label="Reply"
+                >
+                  <Reply className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setIsForwarding((v) => !v);
+                    setIsReplying(false);
+                  }}
+                  aria-label="Forward"
+                >
+                  <Forward className="h-4 w-4" />
+                </Button>
+              </>
             ) : null}
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
               <X className="h-4 w-4" />
@@ -211,6 +299,13 @@ export default function ReceivedEmailDetail({ id, onClose }: Props) {
             fromAddress={fromAddress}
             toAddress={toAddress}
             onDone={() => setIsReplying(false)}
+          />
+        ) : null}
+        {isForwarding && data ? (
+          <ForwardComposer
+            receivedEmailId={id}
+            fromAddress={fromAddress}
+            onDone={() => setIsForwarding(false)}
           />
         ) : null}
       </div>
