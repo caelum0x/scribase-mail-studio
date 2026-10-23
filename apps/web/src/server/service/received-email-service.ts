@@ -313,6 +313,35 @@ function toBracketedMessageId(messageId: string): string {
   return trimmed.startsWith("<") ? trimmed : `<${trimmed}>`;
 }
 
+/**
+ * Build the outgoing `References` header for a reply, chaining onto the
+ * original message's own `References` (captured verbatim on inbound, see
+ * `apps/smtp-server/src/inbound/server.ts`) so that replying to a message
+ * that is itself a reply-of-a-reply still threads correctly in the
+ * recipient's mail client beyond a single hop, per RFC 5322 §3.6.4.
+ */
+function buildReferencesChain(original: ReceivedEmailRow): string | undefined {
+  const headers =
+    original.headers && typeof original.headers === "object"
+      ? (original.headers as Record<string, unknown>)
+      : {};
+  const priorReferences =
+    typeof headers.references === "string" ? headers.references.trim() : "";
+  const ownMessageId = original.messageId
+    ? toBracketedMessageId(original.messageId)
+    : "";
+
+  // Avoid duplicating the original's own id if it was already (incorrectly)
+  // present at the end of its own References header.
+  const priorIds = priorReferences.length > 0 ? priorReferences.split(/\s+/) : [];
+  const chain =
+    ownMessageId && !priorIds.includes(ownMessageId)
+      ? [...priorIds, ownMessageId]
+      : priorIds;
+
+  return chain.length > 0 ? chain.join(" ") : undefined;
+}
+
 export type ReplyToReceivedEmailInput = {
   /** Verified sender address on this team's domain, e.g. the address the mail was received at. */
   from: string;
@@ -356,9 +385,11 @@ export async function replyToReceivedEmail(
 
   const headers: Record<string, string> = {};
   if (original.messageId) {
-    const bracketed = toBracketedMessageId(original.messageId);
-    headers["In-Reply-To"] = bracketed;
-    headers["References"] = bracketed;
+    headers["In-Reply-To"] = toBracketedMessageId(original.messageId);
+  }
+  const references = buildReferencesChain(original);
+  if (references) {
+    headers["References"] = references;
   }
 
   const sent = await sendEmail({

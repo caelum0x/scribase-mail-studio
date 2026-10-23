@@ -306,4 +306,30 @@ export function registerTools(server: McpServer, client: ScribaseMailClient): vo
       return call(() => client.get(`/emails/received/${id}`));
     },
   );
+
+  server.tool(
+    "reply_to_received_email",
+    "Reply to an inbound email, threaded via In-Reply-To/References so it " +
+      "lands in the same conversation in the recipient's mail client. " +
+      "Goes through the normal send pipeline (quota, screening, suppression " +
+      "checks all apply). Defaults the reply recipient to the original sender.",
+    {
+      id: z.string().describe("Received email ID to reply to"),
+      from: z
+        .string()
+        .describe("Verified sender address on one of your domains"),
+      to: z
+        .string()
+        .optional()
+        .describe("Override reply recipient (defaults to the original sender)"),
+      cc: addressListSchema.optional(),
+      text: z.string().optional().describe("Plain text reply body"),
+      html: z.string().optional().describe("HTML reply body"),
+    },
+    async ({ id, from, to, cc, text, html }) => {
+      return call(() =>
+        client.post(`/emails/received/${id}/reply`, { from, to, cc, text, html }),
+      );
+    },
+  );
 }

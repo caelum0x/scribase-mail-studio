@@ -20,6 +20,7 @@ import { simpleParser } from "mailparser";
 import { checkAuth } from "./auth-check";
 import { storeObject } from "./storage";
 import { postInboundMail } from "./api-client";
+import { extractForwardedHeaders } from "../email-headers";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -305,6 +306,13 @@ export function createInboundServer(): SMTPServer {
               ? parsed.from[0]
               : parsed.from)?.text ?? mailFrom;
 
+          // Capture the end-to-end header chain (notably References /
+          // In-Reply-To) so that replying to a message that is itself a
+          // reply-of-a-reply threads correctly beyond one hop. Stored
+          // verbatim on `ReceivedEmail.headers` (Json?, no migration
+          // needed) and read back by `replyToReceivedEmail`.
+          const headers = extractForwardedHeaders(parsed.headerLines);
+
           await postInboundMail({
             recipientDomain: rcptDomains[0] ?? "",
             messageId: parsed.messageId ?? null,
@@ -314,6 +322,7 @@ export function createInboundServer(): SMTPServer {
             subject: parsed.subject ?? "(no subject)",
             text: parsed.text ?? null,
             html: (typeof parsed.html === "string" ? parsed.html : null),
+            headers,
             rawStorageKey,
             sizeBytes: totalBytes,
             spfResult: authResults.spf,
