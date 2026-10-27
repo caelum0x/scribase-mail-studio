@@ -92,7 +92,7 @@ describe("checkMx", () => {
 describe("screenSignupEmail", () => {
   it("passes a business domain with MX", async () => {
     expect(await screenSignupEmail("ceo@Acme.Example", { resolveMx: mxOk })).toEqual({
-      ok: true, reason: "ok", domain: "acme.example",
+      ok: true, reason: "ok", domain: "acme.example", isFreeProvider: false,
     });
   });
   it("rejects free, disposable, no-MX and invalid", async () => {

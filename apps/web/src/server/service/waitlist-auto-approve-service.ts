@@ -54,6 +54,18 @@ export type AutoApproveDeps = {
   /** Atomically claim the domain; returns false when another sign-up holds it. */
   claimDomain: (domain: string, userId: number) => Promise<boolean>;
   releaseDomain: (domain: string, userId: number) => Promise<void>;
+  /**
+   * Let a free/consumer mailbox (gmail.com, outlook.com, ...) auto-approve too,
+   * under its own smaller daily cap below — off by default. Added because most
+   * solo evaluators of a dev tool sign up with a personal inbox, and with no
+   * live human reliably working the manual waitlist queue, the business-domain
+   * -only policy was a dead end for most real organic sign-ups.
+   */
+  allowFreeProviders: boolean;
+  /** Daily cap for the free-provider path specifically — kept separate (and smaller) from `dailyCap` so a spam wave against the easier free-provider path can't also exhaust the business-domain budget, or vice versa. */
+  freeProviderDailyCap: number;
+  /** Atomically reserve one of today's free-provider slots; returns false when that cap is reached. */
+  reserveFreeProviderDailySlot: (cap: number) => Promise<boolean>;
 };
 
 /** Pure decision logic (all I/O injected). Fails closed. */
@@ -66,11 +78,23 @@ export async function decideAutoApproval(
 
   const screening = await screenSignupEmail(user.email, {
     resolveMx: deps.resolveMx,
+    allowFreeProviders: deps.allowFreeProviders,
   });
   if (!screening.ok) {
     return { approved: false, reason: screening.reason, domain: screening.domain };
   }
   const domain = screening.domain!;
+
+  // Free-provider domains are shared by every unrelated sign-up (gmail.com has
+  // millions of accounts) — the "first account on the domain" exclusivity rule
+  // below exists for business domains and makes no sense here, so this path
+  // skips it entirely and uses its own separate per-day budget instead.
+  if (screening.isFreeProvider) {
+    if (!(await deps.reserveFreeProviderDailySlot(deps.freeProviderDailyCap))) {
+      return { approved: false, reason: "daily_cap", domain };
+    }
+    return { approved: true, reason: "ok", domain };
+  }
 
   if ((await deps.countActiveUsersOnDomain(domain, user.id)) > 0) {
     return { approved: false, reason: "domain_taken", domain };
@@ -94,12 +118,26 @@ const DAY_SECONDS = 60 * 60 * 24;
 function liveDeps(): AutoApproveDeps {
   const redis = getRedis();
   const dayKey = () => redisKey(`waitlist:auto-approve:day:${utcDay()}`);
+  const freeProviderDayKey = () => redisKey(`waitlist:auto-approve:free-provider-day:${utcDay()}`);
   const domainKey = (d: string) => redisKey(`waitlist:auto-approve:domain:${d}`);
 
   return {
     enabled: env.AUTO_APPROVE_WAITLIST,
     isCloud: env.NEXT_PUBLIC_IS_CLOUD,
     dailyCap: env.AUTO_APPROVE_DAILY_CAP,
+    allowFreeProviders: env.AUTO_APPROVE_FREE_PROVIDERS,
+    freeProviderDailyCap: env.AUTO_APPROVE_FREE_PROVIDER_DAILY_CAP,
+    reserveFreeProviderDailySlot: async (cap) => {
+      if (cap <= 0) return false;
+      const key = freeProviderDayKey();
+      const n = await redis.incr(key);
+      if (n === 1) await redis.expire(key, DAY_SECONDS * 2);
+      if (n > cap) {
+        await redis.decr(key);
+        return false;
+      }
+      return true;
+    },
     resolveMx: (domain) => dnsResolveMx(domain),
     countActiveUsersOnDomain: (domain, excludeUserId) =>
       db.user.count({

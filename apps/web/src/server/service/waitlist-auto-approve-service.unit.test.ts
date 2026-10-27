@@ -29,11 +29,14 @@ import {
 
 function deps(overrides: Partial<AutoApproveDeps> = {}): AutoApproveDeps {
   let used = 0;
+  let freeUsed = 0;
   const claimed = new Map<string, number>();
   return {
     enabled: true,
     isCloud: true,
     dailyCap: 2,
+    allowFreeProviders: false,
+    freeProviderDailyCap: 2,
     resolveMx: async () => [{ exchange: "mx.acme.example", priority: 10 }],
     countActiveUsersOnDomain: async () => 0,
     reserveDailySlot: async (cap) => {
@@ -52,6 +55,11 @@ function deps(overrides: Partial<AutoApproveDeps> = {}): AutoApproveDeps {
     },
     releaseDomain: async (d) => {
       claimed.delete(d);
+    },
+    reserveFreeProviderDailySlot: async (cap) => {
+      if (freeUsed >= cap) return false;
+      freeUsed++;
+      return true;
     },
     ...overrides,
   };
@@ -91,6 +99,38 @@ describe("decideAutoApproval", () => {
   });
   it("cap of 0 approves nobody", async () => {
     expect((await decideAutoApproval({ id: 1, email: "a@acme.example" }, deps({ dailyCap: 0 }))).reason).toBe("daily_cap");
+  });
+
+  describe("allowFreeProviders", () => {
+    it("approves a free provider once opted in, without claiming the shared domain", async () => {
+      const d = deps({ allowFreeProviders: true });
+      const res = await decideAutoApproval({ id: 1, email: "a@gmail.com" }, d);
+      expect(res).toEqual({ approved: true, reason: "ok", domain: "gmail.com" });
+      // A second, unrelated gmail.com sign-up is not blocked as "domain_taken" —
+      // free domains are shared by everyone, unlike a business domain.
+      const res2 = await decideAutoApproval({ id: 2, email: "b@gmail.com" }, d);
+      expect(res2.approved).toBe(true);
+    });
+    it("still rejects a disposable or no-MX free-looking domain even when opted in", async () => {
+      expect(
+        (await decideAutoApproval({ id: 1, email: "a@mailinator.com" }, deps({ allowFreeProviders: true }))).reason,
+      ).toBe("disposable");
+      expect(
+        (
+          await decideAutoApproval(
+            { id: 1, email: "a@gmail.com" },
+            deps({ allowFreeProviders: true, resolveMx: async () => [] }),
+          )
+        ).reason,
+      ).toBe("no_mx");
+    });
+    it("stops at its own separate daily cap, independent of the business-domain cap", async () => {
+      const d = deps({ allowFreeProviders: true, freeProviderDailyCap: 1 });
+      expect((await decideAutoApproval({ id: 1, email: "a@gmail.com" }, d)).approved).toBe(true);
+      expect((await decideAutoApproval({ id: 2, email: "b@outlook.com" }, d)).reason).toBe("daily_cap");
+      // The business-domain cap is untouched by the free-provider cap being exhausted.
+      expect((await decideAutoApproval({ id: 3, email: "ceo@acme.example" }, d)).approved).toBe(true);
+    });
   });
 });
 

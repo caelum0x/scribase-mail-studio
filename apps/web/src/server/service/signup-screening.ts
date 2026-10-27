@@ -24,6 +24,8 @@ export type ScreeningResult = {
   reason: ScreeningReason;
   /** Normalised ASCII domain (punycode), when the email parsed. */
   domain?: string;
+  /** True when `domain` is a free/consumer provider that was let through via `allowFreeProviders`. */
+  isFreeProvider?: boolean;
 };
 
 export type MxRecord = { exchange: string; priority: number };
@@ -186,16 +188,29 @@ export async function checkMx(
   return usable.length > 0 ? "ok" : "no_mx";
 }
 
-/** Full screening of one email address. Fails closed. */
+/**
+ * Full screening of one email address. Fails closed.
+ *
+ * `allowFreeProviders`: a free/consumer mailbox (gmail.com, outlook.com, ...) is
+ * rejected by default, same as always — but when the caller opts in, a free
+ * provider domain is treated as `ok` instead of a hard `free_provider` failure,
+ * once it has also passed the disposable and MX checks every domain needs. This
+ * exists because most solo evaluators of a dev tool sign up with a personal
+ * inbox before they have a company domain at all, and with no live human
+ * reliably working the manual waitlist queue, "free_provider" was a dead end
+ * for most real organic sign-ups, not a soft speed bump — see
+ * `decideAutoApproval`'s separate, smaller daily cap for this path.
+ */
 export async function screenSignupEmail(
   email: string | null | undefined,
-  deps: { resolveMx: ResolveMx; timeoutMs?: number },
+  deps: { resolveMx: ResolveMx; timeoutMs?: number; allowFreeProviders?: boolean },
 ): Promise<ScreeningResult> {
   const domain = normalizeEmailDomain(email);
   if (!domain) return { ok: false, reason: "invalid_email" };
   if (isDisposableDomain(domain)) return { ok: false, reason: "disposable", domain };
-  if (isFreeProviderDomain(domain)) return { ok: false, reason: "free_provider", domain };
+  const free = isFreeProviderDomain(domain);
+  if (free && !deps.allowFreeProviders) return { ok: false, reason: "free_provider", domain };
   const mx = await checkMx(domain, deps.resolveMx, deps.timeoutMs);
   if (mx !== "ok") return { ok: false, reason: mx, domain };
-  return { ok: true, reason: "ok", domain };
+  return { ok: true, reason: "ok", domain, isFreeProvider: free };
 }
