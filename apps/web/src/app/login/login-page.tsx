@@ -28,6 +28,8 @@ import Link from "next/link";
 import { SOURCE_CODE_URL } from "~/lib/source-code";
 import { useSearchParams as useNextSearchParams } from "next/navigation";
 import { GENERIC_AUTH_ERROR_MESSAGE, getAuthErrorMessage } from "./auth-error";
+import { getPostAuthPath, parsePlanIntent } from "./post-auth-redirect";
+import { PRICING_PLANS } from "@usesend/lib/src/constants/pricing";
 
 const emailSchema = z.object({
   email: z
@@ -120,12 +122,10 @@ export default function LoginPage({
   }
 
   async function onOTPSubmit(values: z.infer<typeof otpSchema>) {
-    const { origin: callbackUrl } = window.location;
+    const { origin } = window.location;
     const email = emailForm.getValues().email;
 
-    const finalCallbackUrl = inviteId
-      ? `/join-team?inviteId=${inviteId}`
-      : `${callbackUrl}/dashboard`;
+    const finalCallbackUrl = `${origin}${getPostAuthPath({ inviteId, plan })}`;
     window.location.href = `/api/auth/callback/email?email=${encodeURIComponent(
       email.toLowerCase(),
     )}&token=${values.otp.toLowerCase()}&callbackUrl=${encodeURIComponent(finalCallbackUrl)}`;
@@ -140,14 +140,13 @@ export default function LoginPage({
 
   const searchParams = useNextSearchParams();
   const inviteId = searchParams.get("inviteId");
+  const plan = searchParams.get("plan");
+  const planIntent = parsePlanIntent(plan);
   const authErrorMessage = getAuthErrorMessage(searchParams.get("error"));
 
   const handleSubmit = (provider: LiteralUnion<BuiltInProviderType>) => {
     setSubmittedProvider(provider);
-    const callbackUrl = inviteId
-      ? `/join-team?inviteId=${inviteId}`
-      : "/dashboard";
-    signIn(provider, { callbackUrl });
+    signIn(provider, { callbackUrl: getPostAuthPath({ inviteId, plan }) });
   };
 
   return (
@@ -173,6 +172,16 @@ export default function LoginPage({
               {isSignup ? "Sign in" : "Create new account"}
             </Link>
           </p>
+          {planIntent ? (
+            <p className="text-center mt-2 text-sm text-muted-foreground">
+              Continuing to{" "}
+              <span className="font-medium text-foreground">
+                {PRICING_PLANS[planIntent].name} ($
+                {PRICING_PLANS[planIntent].priceUsdMonthly}/mo)
+              </span>{" "}
+              — you&apos;ll land on billing with it selected.
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-8 mt-8 border p-8 rounded-lg shadow">

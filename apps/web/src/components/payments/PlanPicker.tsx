@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Button } from "@usesend/ui/src/button";
 import Spinner from "@usesend/ui/src/spinner";
 import { toast } from "@usesend/ui/src/toaster";
@@ -24,9 +25,25 @@ function Note({ children }: { children: React.ReactNode }) {
   );
 }
 
+interface PlanPickerProps {
+  /** Plan to visually highlight and scroll to, e.g. carried over from a
+   * "Choose Pro"/"Choose Scale" click on the marketing site. */
+  highlightPlan?: PricingPlanId | null;
+}
+
 /** Free / Pro / Scale cards with the right action for the team's plan. */
-export const PlanPicker = () => {
+export const PlanPicker = ({ highlightPlan }: PlanPickerProps = {}) => {
   const { currentTeam } = useTeam();
+  const highlightRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlightPlan) {
+      highlightRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [highlightPlan]);
   const utils = api.useUtils();
   const status = api.billing.getBillingStatus.useQuery();
   const subscription = api.billing.getSubscriptionDetails.useQuery();
@@ -104,13 +121,24 @@ export const PlanPicker = () => {
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {PRICING_PLAN_ORDER.map((id) => {
         const plan = PRICING_PLANS[id];
+        const isHighlighted = highlightPlan === id && id !== current;
         return (
           <div
             key={id}
+            ref={isHighlighted ? highlightRef : undefined}
             className={`flex flex-col rounded-xl border p-5 ${
-              id === current ? "border-foreground" : "border-border"
+              id === current
+                ? "border-foreground"
+                : isHighlighted
+                  ? "border-primary ring-2 ring-primary"
+                  : "border-border"
             }`}
           >
+            {isHighlighted ? (
+              <div className="mb-2 inline-flex w-fit items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                Picked for you
+              </div>
+            ) : null}
             <div className="font-medium">{plan.name}</div>
             <div className="mt-2 flex items-baseline gap-1">
               <span className="font-mono text-2xl font-semibold">

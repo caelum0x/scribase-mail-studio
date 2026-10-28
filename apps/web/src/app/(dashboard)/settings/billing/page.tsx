@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@usesend/ui/src/button";
 import { Card } from "@usesend/ui/src/card";
 import { Spinner } from "@usesend/ui/src/spinner";
@@ -10,6 +11,7 @@ import { useTeam } from "~/providers/team-context";
 import { api } from "~/trpc/react";
 import { PlanDetails } from "~/components/payments/PlanDetails";
 import { PlanPicker } from "~/components/payments/PlanPicker";
+import { parsePlanIntent } from "~/app/login/post-auth-redirect";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -23,6 +25,12 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function SettingsPage() {
   const { currentTeam, currentIsAdmin } = useTeam();
+  const searchParams = useSearchParams();
+  // Carried over from a "Choose Pro"/"Choose Scale" click on the marketing
+  // site via the sign-up flow (see post-auth-redirect.ts) so the plan a
+  // visitor picked before signing up is still what they see highlighted
+  // here, instead of a generic plan list with no memory of their intent.
+  const highlightPlan = parsePlanIntent(searchParams.get("plan"));
   const status = api.billing.getBillingStatus.useQuery();
   const manageSessionUrl = api.billing.getManageSessionUrl.useMutation();
   const resume = api.billing.resumeSubscription.useMutation();
@@ -116,7 +124,7 @@ export default function SettingsPage() {
           </p>
         ) : null}
         <div className="mt-8">
-          <PlanPicker />
+          <PlanPicker highlightPlan={highlightPlan} />
         </div>
       </Card>
 
