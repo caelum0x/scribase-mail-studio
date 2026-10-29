@@ -31,10 +31,32 @@ function allowedPrivateHosts(): Set<string> {
   );
 }
 
-export async function assertPublicWebhookUrl(
+/** The host was resolved once; a delivery must connect to exactly `address`
+ * rather than letting the HTTP client resolve the name again (DNS rebinding:
+ * a host can answer a public address for this check and a private one a
+ * moment later, when the real connection is made). `null` only for a host an
+ * operator explicitly allowed via WEBHOOK_ALLOWED_PRIVATE_HOSTS, where there
+ * is nothing to pin against. */
+export interface PinnedWebhookAddress {
+  readonly hostname: string;
+  readonly address: string | null;
+  readonly family: 4 | 6 | null;
+}
+
+function addressFamily(address: string): 4 | 6 {
+  return address.includes(":") ? 6 : 4;
+}
+
+/**
+ * Validates a webhook URL (scheme, credentials, not loopback/private) and
+ * resolves its host to one checked public address. Callers that actually
+ * make the request must connect to the returned `address`, not re-resolve
+ * the hostname — see [`PinnedWebhookAddress`].
+ */
+export async function resolvePinnedWebhookAddress(
   rawUrl: string,
   lookup: Lookup = defaultLookup,
-): Promise<void> {
+): Promise<PinnedWebhookAddress> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -50,7 +72,7 @@ export async function assertPublicWebhookUrl(
 
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (allowedPrivateHosts().has(hostname)) {
-    return;
+    return { hostname, address: null, family: null };
   }
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new WebhookUrlError("Webhook URL must be a public address.");
@@ -68,4 +90,14 @@ export async function assertPublicWebhookUrl(
   ) {
     throw new WebhookUrlError("Webhook URL must be a public address.");
   }
+
+  const address = addresses[0]!.address;
+  return { hostname, address, family: addressFamily(address) };
+}
+
+export async function assertPublicWebhookUrl(
+  rawUrl: string,
+  lookup: Lookup = defaultLookup,
+): Promise<void> {
+  await resolvePinnedWebhookAddress(rawUrl, lookup);
 }

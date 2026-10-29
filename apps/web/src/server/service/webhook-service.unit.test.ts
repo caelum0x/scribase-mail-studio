@@ -6,6 +6,7 @@ const {
   mockDb,
   mockLimitService,
   mockLogger,
+  mockPinnedPost,
   mockQueueAdd,
   mockRedis,
   mockTxWebhookUpdate,
@@ -42,6 +43,7 @@ const {
     info: vi.fn(),
     warn: vi.fn(),
   },
+  mockPinnedPost: vi.fn(),
   mockQueueAdd: vi.fn(),
   mockRedis: {
     eval: vi.fn(),
@@ -69,7 +71,19 @@ vi.mock("~/server/logger/log", () => ({
 
 vi.mock("~/server/utils/webhook-url-guard", () => ({
   assertPublicWebhookUrl: vi.fn().mockResolvedValue(undefined),
+  resolvePinnedWebhookAddress: vi
+    .fn()
+    .mockResolvedValue({
+      hostname: "example.com",
+      address: "93.184.216.34",
+      family: 4,
+    }),
   WebhookUrlError: class WebhookUrlError extends Error {},
+}));
+
+vi.mock("~/server/utils/pinned-http", () => ({
+  pinnedPost: mockPinnedPost,
+  WebhookTimeoutError: class WebhookTimeoutError extends Error {},
 }));
 
 vi.mock("~/server/service/limit-service", () => ({
@@ -166,6 +180,7 @@ describe("WebhookService documented behavior", () => {
       status: WebhookStatus.ACTIVE,
       consecutiveFailures: 0,
     });
+    mockPinnedPost.mockReset();
 
     mockDb.$transaction.mockImplementation(async (input: unknown) => {
       if (typeof input === "function") {
@@ -183,18 +198,14 @@ describe("WebhookService documented behavior", () => {
   it("sends documented webhook headers with retry=false on first attempt", async () => {
     mockDb.webhookCall.findUnique.mockResolvedValue(buildCall());
 
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response('{"ok":true}', {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-        },
-      }),
-    );
+    mockPinnedPost.mockResolvedValue({
+      status: 200,
+      responseText: '{"ok":true}',
+    });
 
     await expect(invokeProcessWebhookCall(0)).resolves.toBeUndefined();
 
-    const [, request] = fetchSpy.mock.calls[0]!;
+    const [request] = mockPinnedPost.mock.calls[0]!;
     const headers = request!.headers as Record<string, string>;
     expect(headers["X-UseSend-Event"]).toBe("email.delivered");
     expect(headers["X-UseSend-Call"]).toBe("call_123");
@@ -206,18 +217,11 @@ describe("WebhookService documented behavior", () => {
   it("sets retry=true header for retry attempts", async () => {
     mockDb.webhookCall.findUnique.mockResolvedValue(buildCall());
 
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response("ok", {
-        status: 200,
-        headers: {
-          "content-type": "text/plain",
-        },
-      }),
-    );
+    mockPinnedPost.mockResolvedValue({ status: 200, responseText: "ok" });
 
     await expect(invokeProcessWebhookCall(1)).resolves.toBeUndefined();
 
-    const [, request] = fetchSpy.mock.calls[0]!;
+    const [request] = mockPinnedPost.mock.calls[0]!;
     const headers = request!.headers as Record<string, string>;
     expect(headers["X-UseSend-Retry"]).toBe("true");
   });
@@ -230,7 +234,7 @@ describe("WebhookService documented behavior", () => {
       consecutiveFailures: 1,
     });
 
-    vi.spyOn(global, "fetch").mockRejectedValue(new Error("network down"));
+    mockPinnedPost.mockRejectedValue(new Error("network down"));
 
     await expect(invokeProcessWebhookCall(5)).rejects.toThrow("network down");
 
@@ -252,7 +256,7 @@ describe("WebhookService documented behavior", () => {
       consecutiveFailures: 0,
     });
 
-    vi.spyOn(global, "fetch").mockRejectedValue(new Error("network down"));
+    mockPinnedPost.mockRejectedValue(new Error("network down"));
 
     await expect(invokeProcessWebhookCall(0)).rejects.toThrow("network down");
 
@@ -286,7 +290,7 @@ describe("WebhookService documented behavior", () => {
         consecutiveFailures: 30,
       });
 
-    vi.spyOn(global, "fetch").mockRejectedValue(new Error("endpoint 500"));
+    mockPinnedPost.mockRejectedValue(new Error("endpoint 500"));
 
     await expect(invokeProcessWebhookCall(5)).resolves.toBeUndefined();
 
@@ -309,7 +313,7 @@ describe("WebhookService documented behavior", () => {
       consecutiveFailures: 1,
     });
 
-    vi.spyOn(global, "fetch").mockRejectedValue(new Error("endpoint 500"));
+    mockPinnedPost.mockRejectedValue(new Error("endpoint 500"));
 
     await expect(invokeProcessWebhookCall(5)).rejects.toThrow("endpoint 500");
     expect(mockTxWebhookUpdate).toHaveBeenCalledTimes(1);

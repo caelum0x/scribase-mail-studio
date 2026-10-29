@@ -22,8 +22,10 @@ import { UnsendApiError } from "../public-api/api-error";
 import { toResendPayload } from "./webhook-resend-payload";
 import {
   assertPublicWebhookUrl,
+  resolvePinnedWebhookAddress,
   WebhookUrlError,
 } from "../utils/webhook-url-guard";
+import { pinnedPost, WebhookTimeoutError } from "../utils/pinned-http";
 
 /** How long (ms) a previous secret remains valid after rotation. */
 const PREVIOUS_SECRET_TTL_MS = 24 * 60 * 60 * 1000;
@@ -890,12 +892,6 @@ async function postWebhook(params: {
   callId: string;
   body: WebhookPayload | ResendWebhookPayload;
 }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    WEBHOOK_REQUEST_TIMEOUT_MS,
-  );
-
   const stringBody = JSON.stringify(params.body);
   const isSvix = params.signatureFormat === WebhookSignatureFormat.SVIX;
 
@@ -955,33 +951,39 @@ async function postWebhook(params: {
     };
   }
 
-  // Re-check at send time: DNS can change after the webhook was saved.
-  await assertPublicWebhookUrl(params.url);
+  // Re-check at send time (DNS can change after the webhook was saved), and
+  // remember exactly which address that check resolved. fetch()/undici would
+  // otherwise resolve the host a second time to make the actual connection —
+  // a DNS-rebinding host can answer a public address for this check and a
+  // private one (loopback, link-local, cloud metadata, an internal Docker
+  // service) moments later for the real connection. pinnedPost() (below)
+  // connects to this exact checked address, never re-resolving the name.
+  const pinned = await resolvePinnedWebhookAddress(params.url);
 
   const start = Date.now();
 
   try {
-    const response = await fetch(params.url, {
-      method: "POST",
+    const { status, responseText } = await pinnedPost({
+      url: params.url,
+      pinned,
       headers,
       body: stringBody,
-      redirect: "manual",
-      signal: controller.signal,
+      timeoutMs: WEBHOOK_REQUEST_TIMEOUT_MS,
+      responseTextLimit: WEBHOOK_RESPONSE_TEXT_LIMIT,
     });
 
     const responseTimeMs = Date.now() - start;
-    const responseText = await captureResponseText(response);
-    if (response.ok) {
+    if (status >= 200 && status < 300) {
       return {
-        responseStatus: response.status,
+        responseStatus: status,
         responseTimeMs,
         responseText,
       };
     }
 
     throw new WebhookHttpError(
-      `Non-2xx response: ${response.status}`,
-      response.status,
+      `Non-2xx response: ${status}`,
+      status,
       responseTimeMs,
       responseText,
     );
@@ -990,7 +992,7 @@ async function postWebhook(params: {
     if (error instanceof WebhookHttpError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (error instanceof WebhookTimeoutError) {
       throw new WebhookHttpError(
         "Webhook request timed out",
         null,
@@ -1004,8 +1006,6 @@ async function postWebhook(params: {
       responseTimeMs,
       null,
     );
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -1038,73 +1038,5 @@ function svixSign(
   return `v1,${hmac.digest("base64")}`;
 }
 
-async function captureResponseText(response: Response) {
-  const contentType = response.headers.get("content-type");
-  const isText =
-    contentType?.startsWith("text/") ||
-    contentType?.includes("application/json") ||
-    contentType?.includes("application/xml");
-
-  if (!isText) {
-    return null;
-  }
-
-  const contentLengthHeader = response.headers.get("content-length");
-  const contentLength = contentLengthHeader
-    ? Number.parseInt(contentLengthHeader, 10)
-    : null;
-
-  if (contentLength && Number.isFinite(contentLength)) {
-    if (contentLength <= 0) {
-      return "";
-    }
-    if (contentLength > WEBHOOK_RESPONSE_TEXT_LIMIT * 2) {
-      return `<omitted: content-length ${contentLength} exceeds limit ${WEBHOOK_RESPONSE_TEXT_LIMIT}>`;
-    }
-  }
-
-  const body = response.body;
-
-  if (body && typeof body.getReader === "function") {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let received = 0;
-    let chunks = "";
-    let truncated = false;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      if (value) {
-        const decoded = decoder.decode(value, { stream: true });
-        received += decoded.length;
-        if (received > WEBHOOK_RESPONSE_TEXT_LIMIT) {
-          const sliceRemaining =
-            WEBHOOK_RESPONSE_TEXT_LIMIT - (received - decoded.length);
-          chunks += decoded.slice(0, Math.max(0, sliceRemaining));
-          truncated = true;
-          await reader.cancel();
-          break;
-        } else {
-          chunks += decoded;
-        }
-      }
-    }
-
-    if (truncated) {
-      return `${chunks}...<truncated>`;
-    }
-
-    return chunks;
-  }
-
-  const text = await response.text();
-  if (text.length > WEBHOOK_RESPONSE_TEXT_LIMIT) {
-    return `${text.slice(0, WEBHOOK_RESPONSE_TEXT_LIMIT)}...<truncated>`;
-  }
-
-  return text;
-}
+// Response-body capture (content-type gated, size-capped) now lives in
+// ../utils/pinned-http.ts, where the DNS-pinned request is made.
