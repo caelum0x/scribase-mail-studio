@@ -18,12 +18,16 @@ Webhooks allow you to receive HTTP POST requests to your server when events occu
     - Respond within 10 seconds
 
   </Step>
-  <Step title="Add webhook in dashboard">
+  <Step title="Add webhook in dashboard, or via the API">
     Go to [Webhooks](https://mail.scribase.com/webhooks) in your Scribase Mail dashboard and create a new webhook:
 
     - Enter your endpoint URL
     - Select which events you want to receive
     - Copy the signing secret for verification
+
+    Or create one programmatically with `POST /webhooks` on the
+    [Resend-compatible API](/guides/resend-migration#api-compatibility-matrix)
+    — this path defaults to Svix-compatible signing (see below).
 
   </Step>
   <Step title="Verify webhook signatures">
@@ -490,26 +494,30 @@ All domain events (`domain.created`, `domain.verified`, `domain.updated`, `domai
 
 ## Resend / Svix signature format
 
-If you are migrating from Resend and your code uses `resend.webhooks.verify()` or
-the `svix` npm package to verify signatures, note that Scribase Mail currently uses
-its own signature format (`X-UseSend-Signature`).
+Webhooks created through the Resend-compatible public API
+(`POST https://mail-api.scribase.com/webhooks`, see the
+[Resend migration guide](/guides/resend-migration)) are **Svix-compatible by
+default**: the signing secret is `whsec_<base64>` and every delivery includes
+`svix-id`, `svix-timestamp`, and `svix-signature` headers using the same
+algorithm Resend and Svix use. If your code already calls
+`resend.webhooks.verify()` or the `svix` npm package, it works unchanged
+against these webhooks — no migration needed.
 
-Svix-compatible webhook signing is on the roadmap.  Until it ships, use the
-`usesend-js` SDK's `webhooks.constructEvent()` method shown above.
+Webhooks created from the dashboard UI still default to the legacy
+`X-UseSend-*` header format described above for backwards compatibility with
+existing integrations; a dashboard webhook can be switched to the Svix format
+from its settings.
 
-Relevant Resend fields and their Scribase Mail equivalents:
+For API-created (Svix format) webhooks, Scribase Mail also sends the plain
+Standard Webhooks headers (`webhook-id`, `webhook-timestamp`,
+`webhook-signature`) alongside the `svix-*` ones, so any Standard Webhooks
+library works too, not just the Svix-branded one.
 
-| Resend header | Scribase Mail header |
-|---|---|
-| `svix-id` | `X-UseSend-Call` |
-| `svix-timestamp` | `X-UseSend-Timestamp` |
-| `svix-signature` | `X-UseSend-Signature` |
-
-The signature algorithm for the current format is:
+The Svix signature algorithm is:
 
 ```
-HMAC-SHA256(secret, "${timestamp}.${rawBody}")
+base64(HMAC-SHA256(base64_decode(secret without "whsec_" prefix), "${svix-id}.${svix-timestamp}.${rawBody}"))
 ```
 
-The `timestamp` is the value of `X-UseSend-Timestamp` (Unix epoch seconds).
-The `secret` is the raw string from the dashboard (no base64 decoding required).
+compared against the `v1,<signature>` value in `svix-signature` (or
+`webhook-signature`).

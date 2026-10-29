@@ -106,8 +106,8 @@ official Resend API.
 | `POST /broadcasts` | Supported | |
 | `GET /broadcasts/{id}` | Supported | |
 | `POST /broadcasts/{id}/send` | Supported | |
-| `GET /webhooks` | Coming soon | |
-| `POST /webhooks` | Coming soon | |
+| `GET /webhooks` | Supported | |
+| `POST /webhooks` | Supported | Svix-compatible signing (`whsec_...`, `svix-signature`/`svix-id`/`svix-timestamp` headers) by default |
 | `GET /suppressions` | Supported | |
 | `POST /suppressions` | Supported | |
 | `DELETE /suppressions/{email}` | Supported | |
@@ -118,12 +118,12 @@ official Resend API.
 
 | Feature | Resend | Scribase Mail |
 |---|---|---|
-| Webhook signature format | Svix (`whsec_...`, `svix-signature` header) | X-UseSend-Signature; Svix format coming in Wave 4 |
+| Webhook signature format | Svix (`whsec_...`, `svix-signature` header) | Svix-compatible by default (`whsec_...`, `svix-id`/`svix-timestamp`/`svix-signature` headers), same algorithm as Resend/Svix — verify with the [Svix SDK](https://docs.svix.com/receiving/verifying-payloads/how) or your own Standard Webhooks implementation |
 | Custom tracking subdomain | Supported | `PATCH /domains/{id}` with `tracking_subdomain` (one label, such as `links`). Open and click links in later mail use `https://links.yourdomain.com`. CNAME that host to the app host (`mail.scribase.com` on the hosted service) before you save the label. The label cannot be cleared. |
 | Attachment `path` (URL) | Supported (server-side fetch) | Not yet (use base64 `content`) |
 | Inline images via `content_id` | Supported | Not yet |
 | `topic_id` on send | Supported | Coming with Topics feature |
-| Inboxes / received email | Supported | Coming soon |
+| Inboxes / received email | Supported | Supported — `GET /emails/received`, `GET /emails/received/{id}` (+ attachments), plus Scribase Mail extensions `POST /emails/received/{id}/reply` and `/forward` that Resend itself doesn't offer |
 | OAuth for third-party apps | Supported | Coming soon |
 | Dedicated IPs | Available as add-on | Available via OCI support request |
 
@@ -131,12 +131,13 @@ official Resend API.
 
 ## Webhook migration
 
-Resend signs webhooks using the Svix format. Scribase Mail currently uses a
-different signature header (`X-UseSend-Signature`). To migrate webhook
-verification code, see the [Webhooks guide](/guides/webhooks).
-
-The Svix-compatible format is on the roadmap and will be available without any
-endpoint URL changes when it ships.
+Resend and Scribase Mail both sign webhooks using the Svix / Standard Webhooks
+format (`whsec_...` secret, `svix-id`/`svix-timestamp`/`svix-signature`
+headers) — existing Resend webhook verification code works unchanged against
+`POST /webhooks`-created endpoints. Scribase Mail also sends the equivalent
+`webhook-id`/`webhook-timestamp`/`webhook-signature` headers side by side for
+compatibility with any Standard Webhooks library that expects that naming.
+See the [Webhooks guide](/guides/webhooks) for setup and event types.
 
 ---
 
