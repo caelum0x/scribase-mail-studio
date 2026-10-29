@@ -120,8 +120,8 @@ official Resend API.
 |---|---|---|
 | Webhook signature format | Svix (`whsec_...`, `svix-signature` header) | Svix-compatible by default (`whsec_...`, `svix-id`/`svix-timestamp`/`svix-signature` headers), same algorithm as Resend/Svix — verify with the [Svix SDK](https://docs.svix.com/receiving/verifying-payloads/how) or your own Standard Webhooks implementation |
 | Custom tracking subdomain | Supported | `PATCH /domains/{id}` with `tracking_subdomain` (one label, such as `links`). Open and click links in later mail use `https://links.yourdomain.com`. CNAME that host to the app host (`mail.scribase.com` on the hosted service) before you save the label. The label cannot be cleared. |
-| Attachment `path` (URL) | Supported (server-side fetch) | Not yet (use base64 `content`) |
-| Inline images via `content_id` | Supported | Not yet |
+| Attachment `path` (URL) | Supported (server-side fetch) | Supported — the server fetches the URL (HTTPS only, 40 MB cap, SSRF-guarded against private/reserved IPs, no redirects) and attaches it, same as `content` |
+| Inline images via `content_id` | Supported | Supported — set `content_id` on an attachment and reference it in your HTML as `<img src="cid:yourId">` |
 | `topic_id` on send | Supported | Coming with Topics feature |
 | Inboxes / received email | Supported | Supported — `GET /emails/received`, `GET /emails/received/{id}` (+ attachments), plus Scribase Mail extensions `POST /emails/received/{id}/reply` and `/forward` that Resend itself doesn't offer |
 | OAuth for third-party apps | Supported | Coming soon |
