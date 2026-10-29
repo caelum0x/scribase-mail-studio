@@ -10,6 +10,7 @@ import {
   refreshDomainVerification,
 } from "~/server/service/domain-service";
 import { db } from "~/server/db";
+import { normalizeTrackingSubdomain } from "~/server/utils/email-tracking";
 import { UnsendApiError } from "../api-error";
 import { readJsonBody, type ResendApp } from "./app";
 import { ResendApiError } from "./errors";
@@ -63,6 +64,7 @@ export type ResendDomain = {
   open_tracking: boolean;
   click_tracking: boolean;
   tls: "opportunistic" | "enforced";
+  tracking_subdomain: string | null;
 };
 
 function mapDomainStatus(status: DomainStatus, isVerifying: boolean): string {
@@ -102,6 +104,8 @@ function mapDnsRecord(record: DomainDnsRecord): ResendDomainRecord {
   let label = "CUSTOM";
   if (record.name.includes("_domainkey")) {
     label = "DKIM";
+  } else if (record.type === "CNAME") {
+    label = "Tracking";
   } else if (record.type === "TXT" && record.value.includes("v=spf1")) {
     label = "SPF";
   } else if (record.name === "_dmarc") {
@@ -137,6 +141,7 @@ function toResendDomain(
     open_tracking: domain.openTracking,
     click_tracking: domain.clickTracking,
     tls: mapTlsMode(domain.tlsMode),
+    tracking_subdomain: normalizeTrackingSubdomain(domain.trackingSubdomain),
   };
 }
 
@@ -208,7 +213,7 @@ export function registerDomainRoutes(app: ResendApp): void {
     }
   });
 
-  // PATCH /domains/:id — update open/click tracking and tls.
+  // PATCH /domains/:id — update open/click tracking, tracking subdomain, and tls.
   app.patch("/domains/:id", async (c) => {
     const team = c.var.team;
     const raw = c.req.param("id");
@@ -226,6 +231,8 @@ export function registerDomainRoutes(app: ResendApp): void {
         open_tracking: z.boolean().optional(),
         click_tracking: z.boolean().optional(),
         tls: z.enum(["opportunistic", "enforced"]).optional(),
+        // null is rejected below: Resend does not let you clear this label.
+        tracking_subdomain: z.string().nullable().optional(),
       })
       .strict()
       .parse(await readJsonBody(c));
@@ -237,6 +244,24 @@ export function registerDomainRoutes(app: ResendApp): void {
     });
     if (!existing) {
       throw new ResendApiError("not_found", "Domain not found");
+    }
+
+    let trackingSubdomain: string | undefined;
+    if (body.tracking_subdomain === null) {
+      throw new ResendApiError(
+        "validation_error",
+        "`tracking_subdomain` cannot be removed.",
+      );
+    }
+    if (body.tracking_subdomain !== undefined) {
+      const label = normalizeTrackingSubdomain(body.tracking_subdomain);
+      if (!label) {
+        throw new ResendApiError(
+          "validation_error",
+          "Invalid `tracking_subdomain`. Use a single DNS label such as `links`.",
+        );
+      }
+      trackingSubdomain = label;
     }
 
     if (body.tls === "enforced") {
@@ -255,6 +280,9 @@ export function registerDomainRoutes(app: ResendApp): void {
         : {}),
       ...(body.click_tracking !== undefined
         ? { clickTracking: body.click_tracking }
+        : {}),
+      ...(trackingSubdomain !== undefined
+        ? { trackingSubdomain }
         : {}),
       ...(body.tls !== undefined
         ? { tlsMode: "OPPORTUNISTIC" as const }

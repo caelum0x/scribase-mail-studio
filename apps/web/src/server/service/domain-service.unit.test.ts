@@ -130,6 +130,7 @@ import {
   DOMAIN_VERIFIED_RECHECK_MS,
   createDomain as createDomainRecord,
   deleteDomain,
+  getDomain,
   isDomainVerificationDue,
   refreshDomainVerification,
 } from "~/server/service/domain-service";
@@ -566,6 +567,28 @@ describe("domain-service provider integration", () => {
       createDomainRecord(7, "example.com", "us-west-2"),
     ).rejects.toThrow(/not available/);
     expect(mockAddDomain).not.toHaveBeenCalled();
+  });
+
+  it("adds a tracking CNAME when a tracking subdomain is set", async () => {
+    mockDb.domain.findUnique.mockResolvedValue(
+      createDomain({
+        isVerifying: false,
+        trackingSubdomain: "links",
+      }),
+    );
+
+    const result = await getDomain(42, 7);
+
+    expect(result.dnsRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "CNAME",
+          name: "links",
+          value: "localhost",
+          status: DomainStatus.NOT_STARTED,
+        }),
+      ]),
+    );
   });
 
   it("uses @ for the SPF host on an apex domain", async () => {

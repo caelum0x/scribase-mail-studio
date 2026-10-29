@@ -20,6 +20,36 @@ export type ApplyTrackingOptions = TrackingOptions & {
 const SIGNATURE_LENGTH = 32;
 const ANCHOR_HREF_PATTERN = /<a\b([^>]*?)\bhref\s*=\s*(["'])(.*?)\2([^>]*)>/gi;
 const NO_TRACK_ATTRIBUTE = "data-scribase-no-track";
+/** One DNS label: `links`, not `links.example.com` and not empty. */
+const TRACKING_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * Resend `tracking_subdomain` is a single label. Returns the lowercase label,
+ * or null when the value cannot be used as a host label.
+ */
+export function normalizeTrackingSubdomain(
+  value: string | null | undefined,
+): string | null {
+  const label = value?.trim().toLowerCase() ?? "";
+  return TRACKING_LABEL_PATTERN.test(label) ? label : null;
+}
+
+/**
+ * Host for open and click links. A saved tracking label rewrites them onto
+ * `https://{label}.{domain}`; otherwise the app origin is used.
+ */
+export function trackingLinkBaseUrl(options: {
+  fallback: string;
+  domainName?: string | null;
+  trackingSubdomain?: string | null;
+}): string {
+  const label = normalizeTrackingSubdomain(options.trackingSubdomain);
+  const name = options.domainName?.trim().toLowerCase().replace(/\.$/, "") ?? "";
+  if (!label || !/^[a-z0-9.-]+$/.test(name) || !name.includes(".")) {
+    return options.fallback;
+  }
+  return `https://${label}.${name}`;
+}
 
 function sign(value: string, secret: string): string {
   return createHmac("sha256", secret)

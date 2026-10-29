@@ -9,7 +9,7 @@ import { extractEmailAddress } from "../provider/oci/mappers";
 import { getRedis, BULL_PREFIX } from "../redis";
 import { DEFAULT_QUEUE_OPTIONS } from "../queue/queue-constants";
 import { buildHeaders } from "../utils/email-headers";
-import { applyTracking } from "../utils/email-tracking";
+import { applyTracking, trackingLinkBaseUrl } from "../utils/email-tracking";
 import { getTrackingSecret } from "../utils/tracking-secret";
 import { processEmailEvent } from "./email-event-service";
 import { logger } from "../logger/log";
@@ -548,7 +548,11 @@ export async function executeEmail(job: QueueEmailJob) {
     const html = email.html
       ? applyTracking(email.html, {
           emailId: email.id,
-          baseUrl: env.NEXTAUTH_URL,
+          baseUrl: trackingLinkBaseUrl({
+            fallback: env.NEXTAUTH_URL,
+            domainName: domain?.name,
+            trackingSubdomain: domain?.trackingSubdomain,
+          }),
           secret: getTrackingSecret(),
           open: domain?.openTracking ?? false,
           click: domain?.clickTracking ?? false,

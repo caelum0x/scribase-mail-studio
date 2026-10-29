@@ -145,6 +145,31 @@ describe("executeEmail", () => {
     expect(mockDb.emailEvent.create).not.toHaveBeenCalled();
   });
 
+  it("rewrites open and click links onto the domain tracking host without changing recipients", async () => {
+    mockDb.domain.findUnique.mockResolvedValue({
+      id: 3,
+      name: "acme.test",
+      openTracking: true,
+      clickTracking: true,
+      trackingSubdomain: "links",
+    });
+    mockProvider.sendRawEmail.mockResolvedValue({
+      messageId: "em_1@acme.test",
+      accepted: ["user@example.com"],
+      rejected: [],
+      response: "250 Ok",
+    });
+
+    await executeEmail(job());
+
+    const input = mockProvider.sendRawEmail.mock.calls[0]![0];
+    expect(input.to).toEqual(["user@example.com"]);
+    expect(input.html).toContain("https://links.acme.test/api/t/o/em_1?s=");
+    expect(input.html).toContain(
+      "https://links.acme.test/api/t/c/em_1?u=https%3A%2F%2Fexample.com",
+    );
+  });
+
   it("passes the team's dedicated sending pool to the provider", async () => {
     mockDb.team.findUnique.mockResolvedValue({ sendingPool: "highvol" });
     mockProvider.sendRawEmail.mockResolvedValue({

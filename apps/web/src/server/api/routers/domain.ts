@@ -20,6 +20,7 @@ import {
 import { sendEmail } from "~/server/service/email-service";
 import { ProviderSettingsService } from "~/server/service/provider-settings-service";
 import { getEmailProvider } from "~/server/provider";
+import { normalizeTrackingSubdomain } from "~/server/utils/email-tracking";
 
 export const domainRouter = createTRPCRouter({
   getAvailableRegions: protectedProcedure.query(async () => {
@@ -84,12 +85,28 @@ export const domainRouter = createTRPCRouter({
       z.object({
         clickTracking: z.boolean().optional(),
         openTracking: z.boolean().optional(),
+        // One DNS label such as `links`; validated below (not cleared once set,
+        // matching the public API's rule), then normalized to lowercase.
+        trackingSubdomain: z.string().trim().min(1).max(63).optional(),
       }),
     )
     .mutation(async ({ input }) => {
+      let trackingSubdomain: string | undefined;
+      if (input.trackingSubdomain !== undefined) {
+        const label = normalizeTrackingSubdomain(input.trackingSubdomain);
+        if (!label) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Invalid tracking subdomain. Use a single DNS label such as `links`.",
+          });
+        }
+        trackingSubdomain = label;
+      }
       return updateDomain(input.id, {
         clickTracking: input.clickTracking,
         openTracking: input.openTracking,
+        trackingSubdomain,
       });
     }),
 

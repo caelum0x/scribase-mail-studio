@@ -19,6 +19,7 @@ import { LimitService } from "./limit-service";
 import type { DomainDnsRecord } from "~/types/domain";
 import { WebhookService } from "./webhook-service";
 import { buildMxRecord } from "./domain-receiving";
+import { normalizeTrackingSubdomain } from "../utils/email-tracking";
 
 const DOMAIN_STATUS_VALUES = new Set(Object.values(DomainStatus));
 export const DOMAIN_UNVERIFIED_RECHECK_MS = 6 * 60 * 60 * 1000;
@@ -107,12 +108,32 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
     },
   ];
 
+  const trackingLabel = normalizeTrackingSubdomain(domain.trackingSubdomain);
+  if (trackingLabel) {
+    records.push({
+      type: "CNAME",
+      name: toRelativeHost(`${trackingLabel}.${domain.name}`, baseDomain),
+      value: trackingCnameTarget(),
+      ttl: "Auto",
+      status: DomainStatus.NOT_STARTED,
+    });
+  }
+
   // Append MX record when receiving is enabled for this domain.
   if (domain.receivingEnabled) {
     records.push(buildMxRecord(domain));
   }
 
   return records;
+}
+
+/** Hostname customers CNAME their tracking label at. Port is not a DNS value. */
+function trackingCnameTarget(): string {
+  try {
+    return new URL(env.NEXTAUTH_URL).hostname;
+  } catch {
+    return "mail.scribase.com";
+  }
 }
 
 function withDnsRecords<T extends Domain>(
@@ -666,7 +687,12 @@ export async function refreshDomainVerification(
 
 export async function updateDomain(
   id: number,
-  data: { clickTracking?: boolean; openTracking?: boolean },
+  data: {
+    clickTracking?: boolean;
+    openTracking?: boolean;
+    trackingSubdomain?: string;
+    tlsMode?: "OPPORTUNISTIC" | "ENFORCED";
+  },
 ) {
   const updated = await db.domain.update({
     where: { id },

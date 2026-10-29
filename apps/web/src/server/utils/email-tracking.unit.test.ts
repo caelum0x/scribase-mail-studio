@@ -4,6 +4,8 @@ import {
   buildClickUrl,
   buildOpenPixelUrl,
   isSafeRedirectUrl,
+  normalizeTrackingSubdomain,
+  trackingLinkBaseUrl,
   verifyClickSignature,
   verifyOpenSignature,
 } from "./email-tracking";
@@ -13,6 +15,32 @@ const opts = {
   baseUrl: "https://mail.scribase.com",
   secret: "test-secret",
 };
+
+describe("tracking subdomain", () => {
+  it("accepts a single DNS label and rejects hostnames", () => {
+    expect(normalizeTrackingSubdomain(" Links ")).toBe("links");
+    expect(normalizeTrackingSubdomain("links.acme.test")).toBeNull();
+    expect(normalizeTrackingSubdomain("-links")).toBeNull();
+    expect(normalizeTrackingSubdomain("")).toBeNull();
+  });
+
+  it("rewrites the tracking host only when the label and domain are usable", () => {
+    expect(
+      trackingLinkBaseUrl({
+        fallback: "https://mail.scribase.com",
+        domainName: "Acme.Test",
+        trackingSubdomain: "links",
+      }),
+    ).toBe("https://links.acme.test");
+    expect(
+      trackingLinkBaseUrl({
+        fallback: "https://mail.scribase.com",
+        domainName: "acme.test",
+        trackingSubdomain: "not a label",
+      }),
+    ).toBe("https://mail.scribase.com");
+  });
+});
 
 describe("email tracking", () => {
   it("signs open pixel urls", () => {

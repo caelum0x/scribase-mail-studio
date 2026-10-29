@@ -22,6 +22,7 @@ import {
 import { TextWithCopyButton } from "@usesend/ui/src/text-with-copy";
 import React, { use } from "react";
 import { Switch } from "@usesend/ui/src/switch";
+import { Input } from "@usesend/ui/src/input";
 import DeleteDomain from "./delete-domain";
 import SendTestMail from "./send-test-mail";
 import ApprovedSenders from "./approved-senders";
@@ -195,6 +196,9 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
     domain.clickTracking,
   );
   const [openTracking, setOpenTracking] = React.useState(domain.openTracking);
+  const [trackingSubdomain, setTrackingSubdomain] = React.useState(
+    domain.trackingSubdomain ?? "",
+  );
 
   function handleClickTrackingChange() {
     setClickTracking(!clickTracking);
@@ -221,6 +225,26 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
       },
     );
   }
+
+  function handleTrackingSubdomainSave() {
+    const label = trackingSubdomain.trim();
+    if (!label) return;
+    updateDomain.mutate(
+      { id: domain.id, trackingSubdomain: label },
+      {
+        onSuccess: () => {
+          utils.domain.invalidate();
+          toast.success(
+            "Tracking subdomain saved. CNAME it to the app host, then re-verify.",
+          );
+        },
+        onError: (err) => {
+          toast.error(err.message);
+        },
+      },
+    );
+  }
+
   return (
     <div className="rounded-lg shadow p-4 border flex flex-col gap-6">
       <p className="font-semibold text-xl">Settings</p>
@@ -248,6 +272,38 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
           onCheckedChange={handleOpenTrackingChange}
           className="data-[state=checked]:bg-success"
         />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="font-semibold">Custom tracking subdomain</div>
+        <p className="text-muted-foreground text-sm">
+          Open and click links use this domain instead of the app URL, so
+          recipients and link previews see <code>{domain.name}</code>, not
+          scribase.com. One DNS label, e.g. <code>links</code>. CNAME{" "}
+          <code>
+            {trackingSubdomain.trim() || "links"}.{domain.name}
+          </code>{" "}
+          to the app host, then save. Once set it can be changed but not
+          cleared.
+        </p>
+        <div className="flex gap-2 items-center max-w-sm">
+          <Input
+            value={trackingSubdomain}
+            onChange={(e) => setTrackingSubdomain(e.target.value)}
+            placeholder="links"
+          />
+          <Button
+            variant="outline"
+            onClick={handleTrackingSubdomainSave}
+            disabled={
+              updateDomain.isPending ||
+              !trackingSubdomain.trim() ||
+              trackingSubdomain.trim() === (domain.trackingSubdomain ?? "")
+            }
+          >
+            Save
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

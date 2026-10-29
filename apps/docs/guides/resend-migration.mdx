@@ -119,7 +119,7 @@ official Resend API.
 | Feature | Resend | Scribase Mail |
 |---|---|---|
 | Webhook signature format | Svix (`whsec_...`, `svix-signature` header) | X-UseSend-Signature; Svix format coming in Wave 4 |
-| Custom tracking subdomain | Supported | Not yet |
+| Custom tracking subdomain | Supported | `PATCH /domains/{id}` with `tracking_subdomain` (one label, such as `links`). Open and click links in later mail use `https://links.yourdomain.com`. CNAME that host to the app host (`mail.scribase.com` on the hosted service) before you save the label. The label cannot be cleared. |
 | Attachment `path` (URL) | Supported (server-side fetch) | Not yet (use base64 `content`) |
 | Inline images via `content_id` | Supported | Not yet |
 | `topic_id` on send | Supported | Coming with Topics feature |
