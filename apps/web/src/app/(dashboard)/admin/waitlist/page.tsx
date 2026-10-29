@@ -40,12 +40,21 @@ type WaitlistUser = NonNullable<RouterOutputs["admin"]["findUserByEmail"]>;
 export default function AdminWaitlistPage() {
   const [userResult, setUserResult] = useState<WaitlistUser | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [queuePage, setQueuePage] = useState(1);
+  const queueLimit = 25;
 
   const form = useForm<SearchInput>({
     resolver: zodResolver(searchSchema),
     defaultValues: {
       email: "",
     },
+  });
+
+  const utils = api.useUtils();
+
+  const queue = api.admin.listWaitlistedUsers.useQuery({
+    page: queuePage,
+    limit: queueLimit,
   });
 
   const findUser = api.admin.findUserByEmail.useMutation({
@@ -66,12 +75,15 @@ export default function AdminWaitlistPage() {
 
   const updateWaitlist = api.admin.updateUserWaitlist.useMutation({
     onSuccess: (updated) => {
-      setUserResult(updated);
+      if (userResult?.id === updated.id) {
+        setUserResult(updated);
+      }
       toast.success(
         updated.isWaitlisted
           ? "User marked as waitlisted"
           : "User removed from waitlist",
       );
+      void utils.admin.listWaitlistedUsers.invalidate();
     },
     onError: (error) => {
       toast.error(error.message ?? "Unable to update waitlist flag");
@@ -103,6 +115,10 @@ export default function AdminWaitlistPage() {
     rejectWaitlist.mutate({ userId: userResult.id });
   };
 
+  const queueUsers = queue.data?.users ?? [];
+  const queueTotal = queue.data?.total ?? 0;
+  const queueTotalPage = queue.data?.totalPage ?? 1;
+
   if (!isCloud()) {
     return (
       <div className="rounded-lg border bg-muted/30 p-6 text-sm text-muted-foreground">
@@ -113,6 +129,117 @@ export default function AdminWaitlistPage() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border p-6 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-base font-medium">Pending queue</p>
+            <p className="text-sm text-muted-foreground">
+              Oldest sign-ups first — {queueTotal} waiting.
+            </p>
+          </div>
+          {queue.isFetching ? <Spinner className="h-4 w-4" /> : null}
+        </div>
+
+        {queue.isLoading ? (
+          <div className="py-6 text-sm text-muted-foreground">Loading queue...</div>
+        ) : queueUsers.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+            No one is waiting right now.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {queueUsers.map((queuedUser) => {
+              const isThisApproving =
+                updateWaitlist.isPending &&
+                updateWaitlist.variables?.userId === queuedUser.id;
+              const isThisRejecting =
+                rejectWaitlist.isPending &&
+                rejectWaitlist.variables?.userId === queuedUser.id;
+              return (
+                <div
+                  key={queuedUser.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{queuedUser.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {queuedUser.name ?? "No name"} ·{" "}
+                      {formatDistanceToNow(new Date(queuedUser.createdAt), {
+                        addSuffix: true,
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() =>
+                        updateWaitlist.mutate({
+                          userId: queuedUser.id,
+                          isWaitlisted: false,
+                        })
+                      }
+                      disabled={isThisApproving || isThisRejecting}
+                    >
+                      {isThisApproving ? (
+                        <>
+                          <Spinner className="mr-2 h-4 w-4" /> Approving...
+                        </>
+                      ) : (
+                        "Approve"
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() =>
+                        rejectWaitlist.mutate({ userId: queuedUser.id })
+                      }
+                      disabled={isThisApproving || isThisRejecting}
+                    >
+                      {isThisRejecting ? (
+                        <>
+                          <Spinner className="mr-2 h-4 w-4" /> Rejecting...
+                        </>
+                      ) : (
+                        "Reject"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {queueTotalPage > 1 ? (
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setQueuePage((p) => Math.max(1, p - 1))}
+              disabled={queuePage <= 1}
+            >
+              Previous
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              Page {queuePage} of {queueTotalPage}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setQueuePage((p) => Math.min(queueTotalPage, p + 1))}
+              disabled={queuePage >= queueTotalPage}
+            >
+              Next
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
       <div className="rounded-lg border p-6 shadow-sm">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>

@@ -90,6 +90,34 @@ export const adminRouter = createTRPCRouter({
       });
     }),
 
+  listWaitlistedUsers: adminProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().min(1).default(1),
+          limit: z.number().int().min(1).max(100).default(25),
+        })
+        .default({}),
+    )
+    .query(async ({ input }) => {
+      const { page, limit } = input;
+      const where = { isWaitlisted: true };
+
+      const [users, total] = await Promise.all([
+        db.user.findMany({
+          where,
+          select: waitlistUserSelection,
+          // Oldest sign-ups first so the queue is actually worked in order.
+          orderBy: { createdAt: "asc" },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        db.user.count({ where }),
+      ]);
+
+      return { users, total, totalPage: Math.ceil(total / limit) || 1 };
+    }),
+
   findUserByEmail: adminProcedure
     .input(
       z.object({
