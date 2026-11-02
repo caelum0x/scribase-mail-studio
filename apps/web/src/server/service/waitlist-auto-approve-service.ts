@@ -39,6 +39,13 @@ export type AutoApproveDecision = {
   approved: boolean;
   reason: AutoApproveReason;
   domain?: string;
+  /**
+   * Which daily budget (and, on approval, which release path) this decision
+   * used. Required so a later rollback knows whether to release the shared
+   * free-provider slot or the business-domain slot + domain claim — the two
+   * paths reserve different Redis counters (see `decideAutoApproval`).
+   */
+  isFreeProvider?: boolean;
 };
 
 export type AutoApproveDeps = {
@@ -66,6 +73,8 @@ export type AutoApproveDeps = {
   freeProviderDailyCap: number;
   /** Atomically reserve one of today's free-provider slots; returns false when that cap is reached. */
   reserveFreeProviderDailySlot: (cap: number) => Promise<boolean>;
+  /** Releases a slot reserved by `reserveFreeProviderDailySlot` — its own counter, separate from `releaseDailySlot`'s business-domain one. */
+  releaseFreeProviderDailySlot: () => Promise<void>;
 };
 
 /** Pure decision logic (all I/O injected). Fails closed. */
@@ -91,9 +100,9 @@ export async function decideAutoApproval(
   // skips it entirely and uses its own separate per-day budget instead.
   if (screening.isFreeProvider) {
     if (!(await deps.reserveFreeProviderDailySlot(deps.freeProviderDailyCap))) {
-      return { approved: false, reason: "daily_cap", domain };
+      return { approved: false, reason: "daily_cap", domain, isFreeProvider: true };
     }
-    return { approved: true, reason: "ok", domain };
+    return { approved: true, reason: "ok", domain, isFreeProvider: true };
   }
 
   if ((await deps.countActiveUsersOnDomain(domain, user.id)) > 0) {
@@ -137,6 +146,9 @@ function liveDeps(): AutoApproveDeps {
         return false;
       }
       return true;
+    },
+    releaseFreeProviderDailySlot: async () => {
+      await redis.decr(freeProviderDayKey());
     },
     resolveMx: (domain) => dnsResolveMx(domain),
     countActiveUsersOnDomain: (domain, excludeUserId) =>
@@ -222,8 +234,16 @@ export async function tryAutoApproveUser(
     await db.user.update({ where: { id: user.id }, data: { isWaitlisted: false } });
   } catch (err) {
     logger.error({ err, userId: user.id }, "[AutoApprove] failed to update user; keeping user waitlisted");
-    await deps.releaseDailySlot().catch(() => undefined);
-    await deps.releaseDomain(decision.domain!, user.id).catch(() => undefined);
+    // The free-provider path reserves its own separate counter and never
+    // claims a domain (see decideAutoApproval) — releasing the business-
+    // domain slot/claim here instead would both leak the free-provider
+    // reservation forever and wrongly free a domain claim nobody made.
+    if (decision.isFreeProvider) {
+      await deps.releaseFreeProviderDailySlot().catch(() => undefined);
+    } else {
+      await deps.releaseDailySlot().catch(() => undefined);
+      await deps.releaseDomain(decision.domain!, user.id).catch(() => undefined);
+    }
     return { approved: false, reason: "error", domain: decision.domain };
   }
 

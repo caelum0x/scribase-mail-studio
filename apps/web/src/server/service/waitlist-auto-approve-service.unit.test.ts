@@ -61,6 +61,9 @@ function deps(overrides: Partial<AutoApproveDeps> = {}): AutoApproveDeps {
       freeUsed++;
       return true;
     },
+    releaseFreeProviderDailySlot: async () => {
+      freeUsed--;
+    },
     ...overrides,
   };
 }
@@ -105,7 +108,7 @@ describe("decideAutoApproval", () => {
     it("approves a free provider once opted in, without claiming the shared domain", async () => {
       const d = deps({ allowFreeProviders: true });
       const res = await decideAutoApproval({ id: 1, email: "a@gmail.com" }, d);
-      expect(res).toEqual({ approved: true, reason: "ok", domain: "gmail.com" });
+      expect(res).toEqual({ approved: true, reason: "ok", domain: "gmail.com", isFreeProvider: true });
       // A second, unrelated gmail.com sign-up is not blocked as "domain_taken" —
       // free domains are shared by everyone, unlike a business domain.
       const res2 = await decideAutoApproval({ id: 2, email: "b@gmail.com" }, d);
@@ -179,5 +182,21 @@ describe("tryAutoApproveUser", () => {
     expect(res.approved).toBe(false);
     expect(releaseDailySlot).toHaveBeenCalled();
     expect(releaseDomain).toHaveBeenCalledWith("acme.example", 7);
+  });
+
+  it("releases the free-provider slot (not the business-domain slot/claim) when the user update fails on that path", async () => {
+    dbMock.user.update.mockRejectedValue(new Error("write failed"));
+    const releaseDailySlot = vi.fn(async () => undefined);
+    const releaseDomain = vi.fn(async () => undefined);
+    const releaseFreeProviderDailySlot = vi.fn(async () => undefined);
+    const res = await tryAutoApproveUser(
+      { id: 7, email: "a@gmail.com" },
+      "signup",
+      deps({ allowFreeProviders: true, releaseDailySlot, releaseDomain, releaseFreeProviderDailySlot }),
+    );
+    expect(res.approved).toBe(false);
+    expect(releaseFreeProviderDailySlot).toHaveBeenCalled();
+    expect(releaseDailySlot).not.toHaveBeenCalled();
+    expect(releaseDomain).not.toHaveBeenCalled();
   });
 });
