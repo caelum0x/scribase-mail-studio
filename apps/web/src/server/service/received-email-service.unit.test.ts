@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockDb, mockWebhookEmit } = vi.hoisted(() => ({
+const { mockDb, mockWebhookEmit, mockSendEmail } = vi.hoisted(() => ({
   mockDb: {
     domain: { findUnique: vi.fn() },
     receivedEmail: {
@@ -14,6 +14,7 @@ const { mockDb, mockWebhookEmit } = vi.hoisted(() => ({
     },
   },
   mockWebhookEmit: vi.fn().mockResolvedValue(undefined),
+  mockSendEmail: vi.fn().mockResolvedValue({ id: "sent_123" }),
 }));
 
 vi.mock("~/server/db", () => ({ db: mockDb }));
@@ -23,11 +24,15 @@ vi.mock("~/server/service/webhook-service", () => ({
 vi.mock("~/server/service/inbound-storage-service", () => ({
   getStorageSignedDownloadUrl: vi.fn().mockResolvedValue("https://example.com/signed"),
 }));
+vi.mock("~/server/service/email-service", () => ({
+  sendEmail: mockSendEmail,
+}));
 
 import {
   persistReceivedEmail,
   getReceivedEmails,
   getReceivedEmailById,
+  replyToReceivedEmail,
 } from "./received-email-service";
 
 const DOMAIN = { id: 7, teamId: 1, receivingEnabled: true };
@@ -161,5 +166,82 @@ describe("getReceivedEmailById", () => {
     mockDb.receivedEmail.findFirst.mockResolvedValue(null);
     const row = await getReceivedEmailById(1, "nonexistent");
     expect(row).toBeNull();
+  });
+});
+
+describe("replyToReceivedEmail — References threading (buildReferencesChain)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSendEmail.mockResolvedValue({ id: "sent_123" });
+  });
+
+  it("extends the References chain using the real on-the-wire capitalized header key", async () => {
+    // Matches the real shape stored by `extractForwardedHeaders`
+    // (apps/smtp-server/src/email-headers.ts), which preserves the
+    // original wire casing — canonically `References`, not `references`.
+    mockDb.receivedEmail.findFirst.mockResolvedValue({
+      ...CREATED_RECEIVED,
+      messageId: "<current@example.com>",
+      headers: { References: "<first@example.com> <second@example.com>" },
+      attachments: [],
+    });
+
+    await replyToReceivedEmail(1, "rec_xyz", {
+      from: "me@acme.dev",
+      text: "Reply body",
+    });
+
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          References:
+            "<first@example.com> <second@example.com> <current@example.com>",
+        }),
+      }),
+    );
+  });
+
+  it("still threads correctly if the header were ever stored lowercase", async () => {
+    mockDb.receivedEmail.findFirst.mockResolvedValue({
+      ...CREATED_RECEIVED,
+      messageId: "<current@example.com>",
+      headers: { references: "<first@example.com>" },
+      attachments: [],
+    });
+
+    await replyToReceivedEmail(1, "rec_xyz", {
+      from: "me@acme.dev",
+      text: "Reply body",
+    });
+
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          References: "<first@example.com> <current@example.com>",
+        }),
+      }),
+    );
+  });
+
+  it("falls back to single-hop (own Message-ID only) when there is no prior References header", async () => {
+    mockDb.receivedEmail.findFirst.mockResolvedValue({
+      ...CREATED_RECEIVED,
+      messageId: "<current@example.com>",
+      headers: null,
+      attachments: [],
+    });
+
+    await replyToReceivedEmail(1, "rec_xyz", {
+      from: "me@acme.dev",
+      text: "Reply body",
+    });
+
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          References: "<current@example.com>",
+        }),
+      }),
+    );
   });
 });

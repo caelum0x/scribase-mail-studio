@@ -329,8 +329,17 @@ function buildReferencesChain(original: ReceivedEmailRow): string | undefined {
     original.headers && typeof original.headers === "object"
       ? (original.headers as Record<string, unknown>)
       : {};
+  // The References header is captured verbatim with its on-the-wire casing
+  // (see `extractForwardedHeaders` in apps/smtp-server/src/email-headers.ts),
+  // which is canonically `References` (capital R) for virtually every real
+  // MTA/MUA — not the lowercase `references` key. Look up case-insensitively
+  // so the chain actually extends beyond one hop in production.
+  const referencesKey = Object.keys(headers).find(
+    (key) => key.toLowerCase() === "references",
+  );
+  const priorReferencesValue = referencesKey ? headers[referencesKey] : undefined;
   const priorReferences =
-    typeof headers.references === "string" ? headers.references.trim() : "";
+    typeof priorReferencesValue === "string" ? priorReferencesValue.trim() : "";
   const ownMessageId = original.messageId
     ? toBracketedMessageId(original.messageId)
     : "";
