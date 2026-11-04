@@ -151,6 +151,11 @@ export const env = createEnv({
     INBOUND_INTERNAL_SECRET: z.string().optional(),
     // Hostname announced as this MX (shown in domain DNS record instructions)
     INBOUND_MX_HOSTNAME: z.string().default("inbound.scribase.com"),
+    // Hostname shown in the custom return-path CNAME instructions (DMARC/SPF
+    // alignment). Mirrors INBOUND_MX_HOSTNAME's pattern: a stable default so
+    // self-host operators (and the house scribase.com domain) have a real
+    // target to CNAME a return-path label at instead of no record at all.
+    RETURN_PATH_CNAME_HOSTNAME: z.string().default("bounce.scribase.com"),
     CONTACT_BOOK_ID: z.string().optional(),
     EMAIL_CLEANUP_DAYS: z
       .string()
@@ -275,6 +280,7 @@ export const env = createEnv({
     EMAIL_CLEANUP_DAYS: process.env.EMAIL_CLEANUP_DAYS,
     INBOUND_INTERNAL_SECRET: process.env.INBOUND_INTERNAL_SECRET,
     INBOUND_MX_HOSTNAME: process.env.INBOUND_MX_HOSTNAME,
+    RETURN_PATH_CNAME_HOSTNAME: process.env.RETURN_PATH_CNAME_HOSTNAME,
     REACHER_ENABLED: process.env.REACHER_ENABLED,
     REACHER_API_URL: process.env.REACHER_API_URL,
     REACHER_API_KEY: process.env.REACHER_API_KEY,

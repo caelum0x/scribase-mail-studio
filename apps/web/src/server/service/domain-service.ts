@@ -119,6 +119,28 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
     });
   }
 
+  // Custom return-path subdomain (e.g. `bounce.<domain>`) for DMARC/SPF
+  // alignment on bounce handling. The `customReturnPath`/`returnPathStatus`
+  // columns and the `updateReturnPath` mutation already existed, but until
+  // now this record was never generated, so there was no way to see *what*
+  // to CNAME it to — the setting was unreachable in practice. Status is
+  // NOT_STARTED (not live-DNS-verified here) until a verification pass sets
+  // returnPathStatus, same caveat as the inbound MX record below.
+  const returnPathLabel = normalizeTrackingSubdomain(domain.customReturnPath);
+  if (returnPathLabel) {
+    records.push({
+      type: "CNAME",
+      name: toRelativeHost(`${returnPathLabel}.${domain.name}`, baseDomain),
+      value: `${env.RETURN_PATH_CNAME_HOSTNAME}.`,
+      ttl: "Auto",
+      status:
+        domain.returnPathStatus === "VERIFIED"
+          ? DomainStatus.SUCCESS
+          : DomainStatus.NOT_STARTED,
+      recommended: false,
+    });
+  }
+
   // Append MX record when receiving is enabled for this domain.
   if (domain.receivingEnabled) {
     records.push(buildMxRecord(domain));

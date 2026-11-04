@@ -190,6 +190,7 @@ export default function DomainItemPage({
 
 const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
   const updateDomain = api.domain.updateDomain.useMutation();
+  const updateReturnPath = api.domain.updateReturnPath.useMutation();
   const utils = api.useUtils();
 
   const [clickTracking, setClickTracking] = React.useState(
@@ -198,6 +199,9 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
   const [openTracking, setOpenTracking] = React.useState(domain.openTracking);
   const [trackingSubdomain, setTrackingSubdomain] = React.useState(
     domain.trackingSubdomain ?? "",
+  );
+  const [returnPath, setReturnPath] = React.useState(
+    domain.customReturnPath ?? "",
   );
 
   function handleClickTrackingChange() {
@@ -236,6 +240,25 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
           utils.domain.invalidate();
           toast.success(
             "Tracking subdomain saved. CNAME it to the app host, then re-verify.",
+          );
+        },
+        onError: (err) => {
+          toast.error(err.message);
+        },
+      },
+    );
+  }
+
+  function handleReturnPathSave() {
+    const label = returnPath.trim().toLowerCase();
+    if (!label) return;
+    updateReturnPath.mutate(
+      { id: domain.id, customReturnPath: label },
+      {
+        onSuccess: () => {
+          utils.domain.invalidate();
+          toast.success(
+            "Return-path subdomain saved. CNAME it using the record shown above, then re-verify.",
           );
         },
         onError: (err) => {
@@ -299,6 +322,36 @@ const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
               updateDomain.isPending ||
               !trackingSubdomain.trim() ||
               trackingSubdomain.trim() === (domain.trackingSubdomain ?? "")
+            }
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="font-semibold">Custom return-path subdomain</div>
+        <p className="text-muted-foreground text-sm">
+          Improves SPF alignment so bounces and complaints pass DMARC on{" "}
+          <code>{domain.name}</code> instead of the shared default. One DNS
+          label, e.g. <code>bounce</code>. Save it, then CNAME the record
+          that appears in the DNS records table above to the host it shows,
+          and verify the domain again.
+        </p>
+        <div className="flex gap-2 items-center max-w-sm">
+          <Input
+            value={returnPath}
+            onChange={(e) => setReturnPath(e.target.value)}
+            placeholder="bounce"
+          />
+          <Button
+            variant="outline"
+            onClick={handleReturnPathSave}
+            disabled={
+              updateReturnPath.isPending ||
+              !returnPath.trim() ||
+              returnPath.trim().toLowerCase() ===
+                (domain.customReturnPath ?? "")
             }
           >
             Save
