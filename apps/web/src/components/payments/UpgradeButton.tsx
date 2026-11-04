@@ -2,6 +2,7 @@ import { Button } from "@usesend/ui/src/button";
 import Spinner from "@usesend/ui/src/spinner";
 import { toast } from "@usesend/ui/src/toaster";
 import { api } from "~/trpc/react";
+import { track } from "~/lib/track";
 
 interface UpgradeButtonProps {
   plan?: "PRO" | "SCALE";
@@ -29,6 +30,11 @@ export const UpgradeButton = ({
     try {
       const url = await checkoutMutation.mutateAsync({ plan });
       if (url) {
+        // Second step of the real new-customer funnel (see login-page.tsx's
+        // signup_email_submitted): a real Dodo checkout session was created and
+        // the visitor is about to be redirected to pay, fired before the
+        // redirect since nothing on this page runs after it.
+        track("checkout_started", { plan });
         window.location.href = url;
       }
     } catch (error) {

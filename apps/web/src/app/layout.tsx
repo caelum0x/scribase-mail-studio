@@ -49,6 +49,15 @@ twq('config','rhhqi');
 `}
         </Script>
         {/* End X conversion tracking base code */}
+        {/* Railyard Insights (railyard/apps/product-analytics): cookieless page tag plus
+            custom `railyard.track()` events for the real signup -> Pro/Scale checkout
+            funnel (src/lib/track.ts, login-page.tsx, UpgradeButton.tsx). Site key is the
+            one already registered for mail.scribase.com via railyard's edge injector
+            (see railyard/apps/insights-edge/docs/FIRST-PARTY-SITES.md) -- shipping it
+            here too is the same belt-and-suspenders pattern yokharita.com and
+            oxhanatelier.com use in their own root layout, so pageviews/events keep
+            counting even if the injector's zone route is ever missed or redeployed. */}
+        <script defer src="https://insights.ereboslab.com/s.js" data-site="ry_site_scribase_mail_7e3c28c34586" />
       </body>
     </html>
   );
