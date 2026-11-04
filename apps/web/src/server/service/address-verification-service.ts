@@ -1,5 +1,12 @@
+import { resolveMx as dnsResolveMx } from "node:dns/promises";
+
 import { env } from "~/env";
 import { logger } from "~/server/logger/log";
+import {
+  checkMx,
+  isDisposableDomain,
+  normalizeEmailDomain,
+} from "~/server/service/signup-screening";
 
 /**
  * Pre-send address verification against a self-hosted
@@ -14,6 +21,17 @@ import { logger } from "~/server/logger/log";
  * unreachable, slow, or returns a bad response, every address is treated as
  * "unverified" (not blocked). A down validator must never silently drop a
  * legitimate send.
+ *
+ * Real deployment constraint: this box's outbound TCP 25 is blocked (Oracle
+ * Cloud default), so a self-hosted Reacher backend can never complete its
+ * SMTP handshake check here — `isConfigured()` being true doesn't mean the
+ * verdict is trustworthy. When Reacher isn't actually configured/usable, a
+ * "lite" fallback (syntax + MX record + disposable-domain check, reusing the
+ * exact same screening primitives already battle-tested for signup
+ * screening) runs instead of silently verifying nothing. It can't catch a
+ * dead mailbox on an otherwise-healthy domain the way a real SMTP check can
+ * — but it does catch bad syntax, non-existent domains, and disposable
+ * inboxes for real, which "unverified" never did.
  */
 
 export type ReacherVerdict = "safe" | "risky" | "invalid" | "unknown" | "unverified";
@@ -42,6 +60,41 @@ function blockedVerdicts(): Set<string> {
 
 function isConfigured(): boolean {
   return env.REACHER_ENABLED && Boolean(env.REACHER_API_URL);
+}
+
+/**
+ * Lite verification: syntax + MX record + disposable-domain check, no SMTP
+ * handshake required. Used as the default fallback when the Reacher SMTP
+ * backend isn't configured (or configured but non-functional, e.g. outbound
+ * TCP 25 blocked) — a real check instead of blind "unverified".
+ *
+ * Maps onto the same `ReacherVerdict` space so callers (and
+ * `REACHER_BLOCK_VERDICTS`) don't need to special-case the fallback path:
+ *  - invalid syntax or no usable MX record  -> "invalid" (genuinely can't receive mail)
+ *  - disposable domain                      -> "risky" (can receive mail, low-quality signup)
+ *  - MX lookup failed (network blip)        -> "unknown" (fail open, not the address's fault)
+ *  - syntax + MX both check out             -> "safe" (domain-level only; can't prove the mailbox itself exists)
+ */
+async function liteCheck(email: string): Promise<AddressCheckResult> {
+  const domain = normalizeEmailDomain(email);
+  if (!domain) {
+    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid" };
+  }
+
+  if (isDisposableDomain(domain)) {
+    return { blocked: blockedVerdicts().has("risky"), verdict: "risky" };
+  }
+
+  const mx = await checkMx(domain, (d) => dnsResolveMx(d));
+  if (mx === "mx_lookup_failed") {
+    logger.warn({ email, domain }, "[AddressVerification]: lite MX lookup failed, failing open");
+    return { blocked: false, verdict: "unknown" };
+  }
+  if (mx === "no_mx") {
+    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid" };
+  }
+
+  return { blocked: blockedVerdicts().has("safe"), verdict: "safe" };
 }
 
 async function checkOne(email: string): Promise<AddressCheckResult> {
@@ -118,11 +171,10 @@ export class AddressVerificationService {
     }
 
     if (!isConfigured()) {
-      const result: Record<string, AddressCheckResult> = {};
-      uniqueEmails.forEach((email) => {
-        result[email] = { blocked: false, verdict: "unverified" };
-      });
-      return result;
+      const entries = await Promise.all(
+        uniqueEmails.map(async (email) => [email, await liteCheck(email)] as const),
+      );
+      return Object.fromEntries(entries);
     }
 
     const entries = await Promise.all(

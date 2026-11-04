@@ -11,8 +11,11 @@ const { mockEnv, mockLogger } = vi.hoisted(() => ({
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+const mockResolveMx = vi.fn();
+
 vi.mock("~/env", () => ({ env: mockEnv }));
 vi.mock("~/server/logger/log", () => ({ logger: mockLogger }));
+vi.mock("node:dns/promises", () => ({ resolveMx: (domain: string) => mockResolveMx(domain) }));
 
 import { AddressVerificationService } from "./address-verification-service";
 
@@ -32,6 +35,8 @@ describe("AddressVerificationService", () => {
     mockEnv.REACHER_API_KEY = undefined;
     mockEnv.REACHER_TIMEOUT_MS = 4000;
     mockEnv.REACHER_BLOCK_VERDICTS = "invalid";
+    mockResolveMx.mockReset();
+    mockResolveMx.mockResolvedValue([{ exchange: "mx.example.com", priority: 10 }]);
   });
 
   afterEach(() => {
@@ -130,7 +135,7 @@ describe("AddressVerificationService", () => {
     expect(result).toEqual({ blocked: false, verdict: "unknown" });
   });
 
-  it("is a no-op (never blocks, never calls fetch) when disabled", async () => {
+  it("falls back to the lite check (never calls fetch) when reacher is disabled", async () => {
     mockEnv.REACHER_ENABLED = false;
     const fetchSpy = vi.spyOn(global, "fetch");
 
@@ -138,11 +143,12 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "unverified" });
+    expect(result).toEqual({ blocked: false, verdict: "safe" });
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockResolveMx).toHaveBeenCalledWith("example.com");
   });
 
-  it("is a no-op when no backend URL is configured", async () => {
+  it("falls back to the lite check when no backend URL is configured", async () => {
     mockEnv.REACHER_API_URL = undefined;
     const fetchSpy = vi.spyOn(global, "fetch");
 
@@ -150,8 +156,50 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "unverified" });
+    expect(result).toEqual({ blocked: false, verdict: "safe" });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  describe("lite fallback (syntax + MX + disposable, no SMTP)", () => {
+    beforeEach(() => {
+      mockEnv.REACHER_ENABLED = false;
+      mockEnv.REACHER_API_URL = undefined;
+    });
+
+    it("blocks malformed addresses as invalid without a DNS lookup", async () => {
+      const result = await AddressVerificationService.checkAddress("not-an-email");
+      expect(result).toEqual({ blocked: true, verdict: "invalid" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("flags a known disposable domain as risky (not blocked by default)", async () => {
+      const result = await AddressVerificationService.checkAddress("a@mailinator.com");
+      expect(result).toEqual({ blocked: false, verdict: "risky" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("blocks a syntactically-valid domain with no MX record", async () => {
+      mockResolveMx.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOTFOUND" }));
+      const result = await AddressVerificationService.checkAddress("a@no-such-domain-xyz.example");
+      expect(result).toEqual({ blocked: true, verdict: "invalid" });
+    });
+
+    it("fails open (unknown, not blocked) when the MX lookup itself errors", async () => {
+      mockResolveMx.mockRejectedValue(new Error("DNS server timeout"));
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+      expect(result).toEqual({ blocked: false, verdict: "unknown" });
+    });
+
+    it("passes a real-looking domain with a usable MX record as safe", async () => {
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+      expect(result).toEqual({ blocked: false, verdict: "safe" });
+    });
+
+    it("respects REACHER_BLOCK_VERDICTS for lite-path verdicts too", async () => {
+      mockEnv.REACHER_BLOCK_VERDICTS = "invalid,risky";
+      const result = await AddressVerificationService.checkAddress("a@mailinator.com");
+      expect(result).toEqual({ blocked: true, verdict: "risky" });
+    });
   });
 
   it("checks multiple unique, normalized addresses in one batch", async () => {
