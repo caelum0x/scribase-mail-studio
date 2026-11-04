@@ -30,6 +30,7 @@ import { useSearchParams as useNextSearchParams } from "next/navigation";
 import { GENERIC_AUTH_ERROR_MESSAGE, getAuthErrorMessage } from "./auth-error";
 import { getPostAuthPath, parsePlanIntent } from "./post-auth-redirect";
 import { PRICING_PLANS } from "@usesend/lib/src/constants/pricing";
+import { track } from "~/lib/track";
 
 const emailSchema = z.object({
   email: z
@@ -108,6 +109,9 @@ export default function LoginPage({
       }
 
       setEmailStatus("success");
+      // First step of the real new-customer funnel (see UpgradeButton.tsx for the
+      // matching checkout_started step): a real signup/sign-in OTP email was sent.
+      if (isSignup) track("signup_email_submitted", { planIntent });
     } catch {
       setEmailStatus("idle");
       emailForm.setError(
