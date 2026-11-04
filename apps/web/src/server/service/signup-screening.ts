@@ -82,18 +82,52 @@ const DISPOSABLE_DOMAINS: ReadonlySet<string> = new Set(
 
 const DOMAIN_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
 
+/** RFC 5322 `atext`: the character set allowed in an unquoted dot-atom label. */
+const ATEXT = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+$/;
+
 /**
- * Extract and normalise the domain of an email address. Lower-cases, strips a
- * trailing dot, converts IDN to punycode and validates every label. Returns
- * null for anything that is not a plain hostname with at least two labels.
+ * Inside a quoted-string local part: any printable ASCII except an
+ * unescaped `"` or `\`, or a backslash-escaped printable ASCII character
+ * (RFC 5322 `qcontent` = `qtext / quoted-pair`).
+ */
+const QUOTED_STRING_CONTENT = /^(?:[\x20-\x21\x23-\x5B\x5D-\x7E]|\\[\x20-\x7E])*$/;
+
+/**
+ * RFC 5322 local-part, restricted to the two forms real mail systems accept:
+ * `dot-atom` (one or more atext labels joined by single dots, no leading,
+ * trailing or doubled dot) or a quoted-string (`"..."`). Also enforces the
+ * RFC 5321 4.5.3.1.1 length limit (local-part <= 64 octets).
+ */
+export function isValidLocalPart(localPart: string): boolean {
+  if (!localPart || localPart.length > 64) return false;
+
+  if (localPart.startsWith('"') && localPart.endsWith('"') && localPart.length >= 2) {
+    return QUOTED_STRING_CONTENT.test(localPart.slice(1, -1));
+  }
+
+  const labels = localPart.split(".");
+  // Leading dot, trailing dot or ".." produce an empty label somewhere.
+  return labels.every((label) => ATEXT.test(label));
+}
+
+/**
+ * Extract and normalise the domain of an email address. Validates the
+ * local-part against RFC 5321/5322 (dot-atom or quoted-string, 64-octet
+ * cap) and the overall address against the RFC 5321 254-octet cap, then
+ * lower-cases the domain, strips a trailing dot, converts IDN to punycode
+ * and validates every label. Returns null for anything that is not a
+ * syntactically valid address with a plain hostname domain of at least two
+ * labels.
  */
 export function normalizeEmailDomain(email: string | null | undefined): string | null {
   if (!email || typeof email !== "string") return null;
   const trimmed = email.trim();
+  if (trimmed.length > 254) return null; // RFC 5321 4.5.3.1.3
   const at = trimmed.lastIndexOf("@");
   if (at <= 0 || at === trimmed.length - 1) return null;
   // Only one "@" is allowed in what we accept for screening.
   if (trimmed.indexOf("@") !== at) return null;
+  if (!isValidLocalPart(trimmed.slice(0, at))) return null;
 
   let domain = trimmed.slice(at + 1).toLowerCase();
   if (domain.endsWith(".")) domain = domain.slice(0, -1);

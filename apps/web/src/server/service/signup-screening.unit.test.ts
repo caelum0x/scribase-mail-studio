@@ -4,6 +4,7 @@ import {
   checkMx,
   isDisposableDomain,
   isFreeProviderDomain,
+  isValidLocalPart,
   normalizeEmailDomain,
   screenSignupEmail,
   type ResolveMx,
@@ -30,6 +31,51 @@ describe("normalizeEmailDomain", () => {
   it("rejects null/undefined", () => {
     expect(normalizeEmailDomain(null)).toBeNull();
     expect(normalizeEmailDomain(undefined)).toBeNull();
+  });
+
+  it.each([
+    "john doe@acme.example", // unescaped space
+    "john..doe@acme.example", // consecutive dots
+    ".john@acme.example", // leading dot
+    "john.@acme.example", // trailing dot
+    'jo"hn@acme.example', // bare unescaped quote mid-local-part
+    `${"a".repeat(65)}@acme.example`, // local-part over the 64-octet cap
+    `a@${"b".repeat(250)}.example`, // address over the 254-octet cap
+  ])("rejects a real-world-invalid local part: %s", (email) => {
+    expect(normalizeEmailDomain(email)).toBeNull();
+  });
+
+  it.each([
+    "valid.person+tag@acme.example",
+    "o'brien@acme.example",
+    '"quoted string"@acme.example',
+    '"escaped\\"quote"@acme.example',
+  ])("accepts a real-world-valid local part: %s", (email) => {
+    expect(normalizeEmailDomain(email)).toBe("acme.example");
+  });
+});
+
+describe("isValidLocalPart", () => {
+  it.each([
+    "john.doe",
+    "john+filter",
+    "o'brien",
+    "under_score",
+    '"quoted string"',
+  ])("accepts %s", (localPart) => {
+    expect(isValidLocalPart(localPart)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "john doe",
+    "john..doe",
+    ".john",
+    "john.",
+    'jo"hn',
+    "a".repeat(65),
+  ])("rejects %s", (localPart) => {
+    expect(isValidLocalPart(localPart)).toBe(false);
   });
 });
 

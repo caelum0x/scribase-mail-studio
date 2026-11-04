@@ -52,7 +52,11 @@ describe("AddressVerificationService", () => {
       "nobody@example.com",
     );
 
-    expect(result).toEqual({ blocked: true, verdict: "invalid" });
+    expect(result).toEqual({
+      blocked: true,
+      verdict: "invalid",
+      method: "reacher_smtp",
+    });
   });
 
   it("does not block safe, risky, or unknown verdicts by default", async () => {
@@ -63,7 +67,7 @@ describe("AddressVerificationService", () => {
       const result = await AddressVerificationService.checkAddress(
         "person@example.com",
       );
-      expect(result).toEqual({ blocked: false, verdict });
+      expect(result).toEqual({ blocked: false, verdict, method: "reacher_smtp" });
     }
   });
 
@@ -104,7 +108,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "unknown" });
+    expect(result).toEqual({ blocked: false, verdict: "unknown", method: "reacher_smtp" });
     expect(mockLogger.warn).toHaveBeenCalled();
   });
 
@@ -120,7 +124,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "unknown" });
+    expect(result).toEqual({ blocked: false, verdict: "unknown", method: "reacher_smtp" });
   });
 
   it("fails open when the backend returns a non-2xx response", async () => {
@@ -132,7 +136,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "unknown" });
+    expect(result).toEqual({ blocked: false, verdict: "unknown", method: "reacher_smtp" });
   });
 
   it("falls back to the lite check (never calls fetch) when reacher is disabled", async () => {
@@ -143,7 +147,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "safe" });
+    expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(mockResolveMx).toHaveBeenCalledWith("example.com");
   });
@@ -156,7 +160,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: false, verdict: "safe" });
+    expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -168,37 +172,96 @@ describe("AddressVerificationService", () => {
 
     it("blocks malformed addresses as invalid without a DNS lookup", async () => {
       const result = await AddressVerificationService.checkAddress("not-an-email");
-      expect(result).toEqual({ blocked: true, verdict: "invalid" });
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
       expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("rejects a syntactically-invalid local part (space) as invalid without a DNS lookup", async () => {
+      const result = await AddressVerificationService.checkAddress(
+        "john doe@example.com",
+      );
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("rejects a local part with consecutive dots as invalid", async () => {
+      const result = await AddressVerificationService.checkAddress(
+        "john..doe@example.com",
+      );
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("rejects a leading-dot local part as invalid", async () => {
+      const result = await AddressVerificationService.checkAddress(".john@example.com");
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
+    });
+
+    it("rejects a local part over the RFC 5321 64-octet limit as invalid", async () => {
+      const result = await AddressVerificationService.checkAddress(
+        `${"a".repeat(65)}@example.com`,
+      );
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("accepts a quoted-string local part", async () => {
+      const result = await AddressVerificationService.checkAddress(
+        '"john doe"@example.com',
+      );
+      expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
+    });
+
+    it("accepts a syntactically-valid, non-disposable address with a usable MX record as safe", async () => {
+      const result = await AddressVerificationService.checkAddress(
+        "valid.person+tag@example.com",
+      );
+      expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
+      expect(mockResolveMx).toHaveBeenCalledWith("example.com");
     });
 
     it("flags a known disposable domain as risky (not blocked by default)", async () => {
       const result = await AddressVerificationService.checkAddress("a@mailinator.com");
-      expect(result).toEqual({ blocked: false, verdict: "risky" });
+      expect(result).toEqual({ blocked: false, verdict: "risky", method: "lite_fallback" });
+      expect(mockResolveMx).not.toHaveBeenCalled();
+    });
+
+    it("rejects a known disposable-domain address when risky is blocked", async () => {
+      mockEnv.REACHER_BLOCK_VERDICTS = "invalid,risky";
+      const result = await AddressVerificationService.checkAddress("a@mailinator.com");
+      expect(result).toEqual({ blocked: true, verdict: "risky", method: "lite_fallback" });
       expect(mockResolveMx).not.toHaveBeenCalled();
     });
 
     it("blocks a syntactically-valid domain with no MX record", async () => {
       mockResolveMx.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOTFOUND" }));
       const result = await AddressVerificationService.checkAddress("a@no-such-domain-xyz.example");
-      expect(result).toEqual({ blocked: true, verdict: "invalid" });
+      expect(result).toEqual({ blocked: true, verdict: "invalid", method: "lite_fallback" });
     });
 
     it("fails open (unknown, not blocked) when the MX lookup itself errors", async () => {
       mockResolveMx.mockRejectedValue(new Error("DNS server timeout"));
       const result = await AddressVerificationService.checkAddress("person@example.com");
-      expect(result).toEqual({ blocked: false, verdict: "unknown" });
+      expect(result).toEqual({ blocked: false, verdict: "unknown", method: "lite_fallback" });
+    });
+
+    it("reports the degraded-confidence lite_fallback method, not a false full-verification claim, when SMTP probing is unavailable", async () => {
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+      expect(result.verdict).toBe("safe");
+      // The honest signal: this "safe" did NOT come from a real SMTP probe.
+      expect(result.method).toBe("lite_fallback");
+      expect(result.method).not.toBe("reacher_smtp");
     });
 
     it("passes a real-looking domain with a usable MX record as safe", async () => {
       const result = await AddressVerificationService.checkAddress("person@example.com");
-      expect(result).toEqual({ blocked: false, verdict: "safe" });
+      expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
     });
 
     it("respects REACHER_BLOCK_VERDICTS for lite-path verdicts too", async () => {
       mockEnv.REACHER_BLOCK_VERDICTS = "invalid,risky";
       const result = await AddressVerificationService.checkAddress("a@mailinator.com");
-      expect(result).toEqual({ blocked: true, verdict: "risky" });
+      expect(result).toEqual({ blocked: true, verdict: "risky", method: "lite_fallback" });
     });
   });
 
@@ -222,10 +285,12 @@ describe("AddressVerificationService", () => {
     expect(results["good@example.com"]).toEqual({
       blocked: false,
       verdict: "safe",
+      method: "reacher_smtp",
     });
     expect(results["bad@example.com"]).toEqual({
       blocked: true,
       verdict: "invalid",
+      method: "reacher_smtp",
     });
   });
 
@@ -239,7 +304,7 @@ describe("AddressVerificationService", () => {
       "person@example.com",
     );
 
-    expect(result).toEqual({ blocked: true, verdict: "risky" });
+    expect(result).toEqual({ blocked: true, verdict: "risky", method: "reacher_smtp" });
   });
 
   it("returns an empty result for an empty address list without calling fetch", async () => {

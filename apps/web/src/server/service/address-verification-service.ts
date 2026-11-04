@@ -31,15 +31,37 @@ import {
  * screening) runs instead of silently verifying nothing. It can't catch a
  * dead mailbox on an otherwise-healthy domain the way a real SMTP check can
  * — but it does catch bad syntax, non-existent domains, and disposable
- * inboxes for real, which "unverified" never did.
+ * inboxes for real, which "unverified" never did. `AddressCheckResult.method`
+ * tells callers which path produced the verdict ("reacher_smtp" vs
+ * "lite_fallback"), so a degraded-confidence "safe" is never indistinguishable
+ * from a real SMTP-confirmed one.
  */
 
 export type ReacherVerdict = "safe" | "risky" | "invalid" | "unknown" | "unverified";
+
+/**
+ * How a verdict was produced. Callers that need to tell a real,
+ * SMTP-mailbox-confirmed "safe" apart from a degraded, domain-only "safe"
+ * (syntax + MX + disposable checks only, e.g. because outbound TCP 25 is
+ * blocked on this host) should key off this instead of `verdict` alone —
+ * `verdict` keeps its existing meaning/values for backward compatibility
+ * with `REACHER_BLOCK_VERDICTS` and existing callers.
+ */
+export type AddressCheckMethod = "reacher_smtp" | "lite_fallback" | "none";
 
 export type AddressCheckResult = {
   /** True only when the verdict is in REACHER_BLOCK_VERDICTS (default: "invalid"). */
   blocked: boolean;
   verdict: ReacherVerdict;
+  /**
+   * "reacher_smtp": a real SMTP-probe verdict from the configured Reacher
+   * backend. "lite_fallback": Reacher wasn't configured/usable, so this
+   * verdict only reflects syntax + MX + disposable-domain checks — it can
+   * rule out a dead domain or bad syntax, but it does NOT confirm the
+   * mailbox itself exists. A "safe" lite_fallback result is honestly
+   * "no red flags found", not "verified deliverable".
+   */
+  method: AddressCheckMethod;
 };
 
 type ReacherCheckEmailResponse = {
@@ -78,23 +100,23 @@ function isConfigured(): boolean {
 async function liteCheck(email: string): Promise<AddressCheckResult> {
   const domain = normalizeEmailDomain(email);
   if (!domain) {
-    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid" };
+    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid", method: "lite_fallback" };
   }
 
   if (isDisposableDomain(domain)) {
-    return { blocked: blockedVerdicts().has("risky"), verdict: "risky" };
+    return { blocked: blockedVerdicts().has("risky"), verdict: "risky", method: "lite_fallback" };
   }
 
   const mx = await checkMx(domain, (d) => dnsResolveMx(d));
   if (mx === "mx_lookup_failed") {
     logger.warn({ email, domain }, "[AddressVerification]: lite MX lookup failed, failing open");
-    return { blocked: false, verdict: "unknown" };
+    return { blocked: false, verdict: "unknown", method: "lite_fallback" };
   }
   if (mx === "no_mx") {
-    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid" };
+    return { blocked: blockedVerdicts().has("invalid"), verdict: "invalid", method: "lite_fallback" };
   }
 
-  return { blocked: blockedVerdicts().has("safe"), verdict: "safe" };
+  return { blocked: blockedVerdicts().has("safe"), verdict: "safe", method: "lite_fallback" };
 }
 
 async function checkOne(email: string): Promise<AddressCheckResult> {
@@ -125,13 +147,13 @@ async function checkOne(email: string): Promise<AddressCheckResult> {
         { email, status: response.status },
         "[AddressVerification]: reacher returned a non-2xx response, failing open",
       );
-      return { blocked: false, verdict: "unknown" };
+      return { blocked: false, verdict: "unknown", method: "reacher_smtp" };
     }
 
     const data = (await response.json()) as ReacherCheckEmailResponse;
     const verdict = (data.is_reachable ?? "unknown").toLowerCase() as ReacherVerdict;
 
-    return { blocked: blockedVerdicts().has(verdict), verdict };
+    return { blocked: blockedVerdicts().has(verdict), verdict, method: "reacher_smtp" };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       logger.warn(
@@ -147,7 +169,7 @@ async function checkOne(email: string): Promise<AddressCheckResult> {
         "[AddressVerification]: reacher unreachable, failing open (send proceeds)",
       );
     }
-    return { blocked: false, verdict: "unknown" };
+    return { blocked: false, verdict: "unknown", method: "reacher_smtp" };
   } finally {
     clearTimeout(timeout);
   }
@@ -190,11 +212,11 @@ export class AddressVerificationService {
   static async checkAddress(email: string): Promise<AddressCheckResult> {
     const normalized = normalizeEmail(email);
     if (!normalized) {
-      return { blocked: false, verdict: "unverified" };
+      return { blocked: false, verdict: "unverified", method: "none" };
     }
     const results = await AddressVerificationService.checkAddresses([
       normalized,
     ]);
-    return results[normalized] ?? { blocked: false, verdict: "unverified" };
+    return results[normalized] ?? { blocked: false, verdict: "unverified", method: "none" };
   }
 }
