@@ -112,6 +112,10 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL (approves the waitlist)}
       AUTO_APPROVE_WAITLIST: ${AUTO_APPROVE_WAITLIST:-false}
       AUTO_APPROVE_DAILY_CAP: ${AUTO_APPROVE_DAILY_CAP:-25}
+      # Also let a free/consumer inbox (gmail.com, outlook.com, ...) auto-approve,
+      # under its own smaller daily cap. Off by default.
+      AUTO_APPROVE_FREE_PROVIDERS: ${AUTO_APPROVE_FREE_PROVIDERS:-false}
+      AUTO_APPROVE_FREE_PROVIDER_DAILY_CAP: ${AUTO_APPROVE_FREE_PROVIDER_DAILY_CAP:-10}
       GITHUB_ID: ${GITHUB_ID:-}
       GITHUB_SECRET: ${GITHUB_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
