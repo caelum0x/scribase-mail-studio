@@ -174,6 +174,17 @@ export const env = createEnv({
     // Comma-separated reacher `is_reachable` verdicts that block a send
     // ("invalid" only by default — "risky"/"unknown" are logged, not blocked).
     REACHER_BLOCK_VERDICTS: z.string().default("invalid"),
+    // Self-test probe address used to confirm Reacher can actually complete
+    // an SMTP check (not just that its HTTP endpoint is reachable). Defaults
+    // to a made-up mailbox at a real, non-catch-all provider (gmail.com) so a
+    // healthy Reacher deterministically returns "invalid" (real SMTP RCPT TO
+    // rejection) rather than "unknown" (SMTP never completed, e.g. outbound
+    // TCP 25 blocked). Override only if the default provider ever becomes
+    // unreachable from the Reacher host.
+    REACHER_SELFTEST_EMAIL: z
+      .string()
+      .email()
+      .default("reacher-selftest-probe-does-not-exist@gmail.com"),
   },
 
   /**
@@ -269,6 +280,7 @@ export const env = createEnv({
     REACHER_API_KEY: process.env.REACHER_API_KEY,
     REACHER_TIMEOUT_MS: process.env.REACHER_TIMEOUT_MS,
     REACHER_BLOCK_VERDICTS: process.env.REACHER_BLOCK_VERDICTS,
+    REACHER_SELFTEST_EMAIL: process.env.REACHER_SELFTEST_EMAIL,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

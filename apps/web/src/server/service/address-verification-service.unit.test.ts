@@ -7,6 +7,7 @@ const { mockEnv, mockLogger } = vi.hoisted(() => ({
     REACHER_API_KEY: undefined as string | undefined,
     REACHER_TIMEOUT_MS: 4000,
     REACHER_BLOCK_VERDICTS: "invalid",
+    REACHER_SELFTEST_EMAIL: "reacher-selftest-probe-does-not-exist@gmail.com",
   },
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -17,7 +18,10 @@ vi.mock("~/env", () => ({ env: mockEnv }));
 vi.mock("~/server/logger/log", () => ({ logger: mockLogger }));
 vi.mock("node:dns/promises", () => ({ resolveMx: (domain: string) => mockResolveMx(domain) }));
 
-import { AddressVerificationService } from "./address-verification-service";
+import {
+  AddressVerificationService,
+  _setReacherHealthCacheForTests,
+} from "./address-verification-service";
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return {
@@ -35,8 +39,14 @@ describe("AddressVerificationService", () => {
     mockEnv.REACHER_API_KEY = undefined;
     mockEnv.REACHER_TIMEOUT_MS = 4000;
     mockEnv.REACHER_BLOCK_VERDICTS = "invalid";
+    mockEnv.REACHER_SELFTEST_EMAIL = "reacher-selftest-probe-does-not-exist@gmail.com";
     mockResolveMx.mockReset();
     mockResolveMx.mockResolvedValue([{ exchange: "mx.example.com", priority: 10 }]);
+    // Pre-warm the self-test cache as "healthy" so tests that aren't about
+    // the self-test gate itself exercise checkOne()/liteCheck() directly,
+    // without an extra probe call consuming the test's own fetch mock.
+    // Tests that target the self-test gate explicitly reset/override this.
+    _setReacherHealthCacheForTests({ healthy: true, checkedAt: Date.now() });
   });
 
   afterEach(() => {
@@ -314,5 +324,137 @@ describe("AddressVerificationService", () => {
 
     expect(results).toEqual({});
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  describe("self-test / auto-demote guard (Reacher configured but may be structurally broken)", () => {
+    beforeEach(() => {
+      // Force every test in this block to run its own real probe instead of
+      // inheriting the outer beforeEach's pre-warmed "healthy" cache.
+      _setReacherHealthCacheForTests(null);
+    });
+
+    it("healthy path: probes once, treats a determinate probe verdict as healthy, and uses real reacher_smtp checks after", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+        const body = JSON.parse((init as RequestInit).body as string);
+        // A healthy Reacher completes the SMTP handshake for every address,
+        // including the self-test probe mailbox -> "invalid" (doesn't exist).
+        const verdict = body.to_email === mockEnv.REACHER_SELFTEST_EMAIL ? "invalid" : "safe";
+        return jsonResponse({ is_reachable: verdict });
+      });
+
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+
+      expect(result).toEqual({ blocked: false, verdict: "safe", method: "reacher_smtp" });
+      // One call for the self-test probe, one for the real address.
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ to_email: mockEnv.REACHER_SELFTEST_EMAIL }),
+        }),
+      );
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it("healthy path: a cached-healthy probe is not repeated on every call (no fetch spam)", async () => {
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockResolvedValue(jsonResponse({ is_reachable: "invalid" }));
+
+      await AddressVerificationService.checkAddress("first@example.com");
+      await AddressVerificationService.checkAddress("second@example.com");
+      await AddressVerificationService.checkAddress("third@example.com");
+
+      // 1 probe + 3 real checks, not 3 probes + 3 real checks.
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+    });
+
+    it("demoted path: a persistently-unknown probe (e.g. outbound TCP 25 blocked) auto-demotes to the lite fallback, not reacher_smtp", async () => {
+      vi.spyOn(global, "fetch").mockResolvedValue(
+        jsonResponse({ is_reachable: "unknown" }),
+      );
+
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+
+      // Demoted: the real, maintained syntax+MX+disposable fallback runs,
+      // not a mislabeled "reacher_smtp" result built from an unknown verdict.
+      expect(result).toEqual({ blocked: false, verdict: "safe", method: "lite_fallback" });
+      expect(mockResolveMx).toHaveBeenCalledWith("example.com");
+    });
+
+    it("demoted path: a probe that errors/times out (same as a blocked SMTP port) also auto-demotes to the lite fallback", async () => {
+      vi.spyOn(global, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+
+      expect(result.method).toBe("lite_fallback");
+    });
+
+    it("demoted path: logs a clear warning identifying the Reacher self-test failure (never a silent downgrade)", async () => {
+      vi.spyOn(global, "fetch").mockResolvedValue(
+        jsonResponse({ is_reachable: "unknown" }),
+      );
+
+      await AddressVerificationService.checkAddress("person@example.com");
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ reacherApiUrl: mockEnv.REACHER_API_URL }),
+        expect.stringContaining("Reacher self-test failed"),
+      );
+    });
+
+    it("demoted path: a known-bad address is still caught by the lite fallback's own checks while demoted", async () => {
+      vi.spyOn(global, "fetch").mockResolvedValue(
+        jsonResponse({ is_reachable: "unknown" }),
+      );
+
+      const result = await AddressVerificationService.checkAddress("a@mailinator.com");
+
+      expect(result).toEqual({ blocked: false, verdict: "risky", method: "lite_fallback" });
+    });
+
+    it("demoted path: a persistently-unknown probe does not repeat the probe fetch on every call either", async () => {
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockResolvedValue(jsonResponse({ is_reachable: "unknown" }));
+
+      await AddressVerificationService.checkAddress("first@example.com");
+      await AddressVerificationService.checkAddress("second@example.com");
+
+      // Only 1 probe call total; the demoted real checks use the lite
+      // fallback (no fetch), so there should be exactly 1 fetch call overall.
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("recovery: once a later probe succeeds, logs a recovery notice and resumes real reacher_smtp checks", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch");
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ is_reachable: "unknown" })); // probe 1: broken
+      fetchSpy.mockResolvedValue(jsonResponse({ is_reachable: "invalid" })); // everything after: healthy
+
+      const first = await AddressVerificationService.checkAddress("person@example.com");
+      expect(first.method).toBe("lite_fallback");
+
+      // Simulate the TTL window elapsing so the next call re-probes.
+      _setReacherHealthCacheForTests({ healthy: false, checkedAt: Date.now() - 11 * 60 * 1000 });
+
+      const second = await AddressVerificationService.checkAddress("nobody@example.com");
+
+      expect(second).toEqual({ blocked: true, verdict: "invalid", method: "reacher_smtp" });
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ reacherApiUrl: mockEnv.REACHER_API_URL }),
+        expect.stringContaining("Reacher self-test recovered"),
+      );
+    });
+
+    it("does not probe at all when Reacher isn't configured (lite fallback short-circuits first)", async () => {
+      mockEnv.REACHER_API_URL = undefined;
+      const fetchSpy = vi.spyOn(global, "fetch");
+
+      const result = await AddressVerificationService.checkAddress("person@example.com");
+
+      expect(result.method).toBe("lite_fallback");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 });

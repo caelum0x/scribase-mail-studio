@@ -35,6 +35,21 @@ import {
  * tells callers which path produced the verdict ("reacher_smtp" vs
  * "lite_fallback"), so a degraded-confidence "safe" is never indistinguishable
  * from a real SMTP-confirmed one.
+ *
+ * Self-test / auto-demote guard: `isConfigured()` only proves the env vars
+ * are *set* — it can't prove Reacher can actually finish an SMTP check (e.g.
+ * if outbound TCP 25 is blocked at the network level, Reacher's backend
+ * returns a normal 200 with `is_reachable: "unknown"` for every address,
+ * forever, while this module would otherwise happily label that
+ * `method: "reacher_smtp"` as if it were authoritative). Before trusting a
+ * configured Reacher, `ensureReacherHealthy()` runs a real, cached probe
+ * (`REACHER_SELFTEST_EMAIL`, a made-up mailbox at a real non-catch-all
+ * provider) and only treats Reacher as healthy if that probe comes back with
+ * a determinate verdict (not "unknown"). If the probe fails, every check
+ * silently-but-visibly (a clear logged warning, not a silent downgrade)
+ * demotes to the same `liteCheck()` fallback used when Reacher isn't
+ * configured at all, until a later re-probe (after `REACHER_SELFTEST_TTL_MS`)
+ * finds it healthy again.
  */
 
 export type ReacherVerdict = "safe" | "risky" | "invalid" | "unknown" | "unverified";
@@ -82,6 +97,71 @@ function blockedVerdicts(): Set<string> {
 
 function isConfigured(): boolean {
   return env.REACHER_ENABLED && Boolean(env.REACHER_API_URL);
+}
+
+/** Re-probe at most this often; recovery/regression is picked up within one TTL window. */
+const REACHER_SELFTEST_TTL_MS = 10 * 60 * 1000;
+
+type ReacherHealthState = { healthy: boolean; checkedAt: number };
+
+let reacherHealthCache: ReacherHealthState | null = null;
+
+/**
+ * Test-only: directly sets (or clears, with `null`) the cached self-test
+ * result. Lets tests either force a clean slate (so the next call runs a
+ * real probe) or pre-warm a known health state without spending the test's
+ * `fetch` mock on an extra probe call.
+ */
+export function _setReacherHealthCacheForTests(state: ReacherHealthState | null): void {
+  reacherHealthCache = state;
+}
+
+/**
+ * Confirms Reacher can actually complete an SMTP check, not just that its
+ * HTTP endpoint is reachable. Probes a made-up mailbox at a real,
+ * non-catch-all provider (`REACHER_SELFTEST_EMAIL`, default gmail.com): that
+ * provider's SMTP server genuinely validates RCPT TO per-mailbox, so a
+ * healthy Reacher backend MUST come back with a determinate verdict
+ * ("invalid" in the normal case — the probe mailbox doesn't exist). A
+ * structurally broken Reacher (e.g. outbound TCP 25 blocked) can never
+ * finish that handshake and comes back "unknown" instead — the same signal
+ * documented in production for this exact failure mode.
+ */
+async function probeReacherOnce(): Promise<boolean> {
+  const probe = await checkOne(env.REACHER_SELFTEST_EMAIL);
+  return probe.verdict !== "unknown";
+}
+
+/**
+ * Cached, periodically-refreshed self-test gate. Returns false (demote to
+ * `liteCheck()`) whenever Reacher is configured but can't prove it can
+ * finish a real SMTP check — logging a clear warning so the downgrade is
+ * never silent. Returns true (and logs a recovery notice) once a later probe
+ * succeeds again.
+ */
+async function ensureReacherHealthy(): Promise<boolean> {
+  const now = Date.now();
+  if (reacherHealthCache && now - reacherHealthCache.checkedAt < REACHER_SELFTEST_TTL_MS) {
+    return reacherHealthCache.healthy;
+  }
+
+  const wasHealthy = reacherHealthCache?.healthy;
+  const healthy = await probeReacherOnce();
+  reacherHealthCache = { healthy, checkedAt: now };
+
+  if (!healthy) {
+    logger.warn(
+      { reacherApiUrl: env.REACHER_API_URL, selftestEmail: env.REACHER_SELFTEST_EMAIL },
+      "[AddressVerification]: Reacher self-test failed (SMTP check never completed — e.g. outbound TCP 25 blocked); auto-demoting every address check to the lite fallback (syntax+MX+disposable) until Reacher recovers",
+    );
+  } else if (wasHealthy === false) {
+    logger.info(
+      { reacherApiUrl: env.REACHER_API_URL },
+      "[AddressVerification]: Reacher self-test recovered; resuming real SMTP-backed checks",
+    );
+  }
+
+  return healthy;
 }
 
 /**
@@ -192,7 +272,7 @@ export class AddressVerificationService {
       return {};
     }
 
-    if (!isConfigured()) {
+    if (!isConfigured() || !(await ensureReacherHealthy())) {
       const entries = await Promise.all(
         uniqueEmails.map(async (email) => [email, await liteCheck(email)] as const),
       );
