@@ -16,9 +16,9 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
-const TITLE = "Scribase Mail - Email API and dashboard";
+const TITLE = "Scribase Mail - Open source Resend alternative";
 const DESCRIPTION =
-  "Send transactional and marketing email with a familiar REST API and a calm dashboard. Part of Scribase.";
+  "A Resend alternative you can self-host or run hosted: same REST API, same SDKs, same pricing. AGPL-3.0, switch with one line. Part of Scribase.";
 
 export const metadata: Metadata = {
   title: TITLE,

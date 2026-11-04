@@ -18,6 +18,7 @@ export default function Page() {
     <main className="min-h-screen bg-background text-foreground">
       <TopNav />
       <Hero />
+      <ResendAlternative />
       <Features />
       <CodeExample />
       <Pricing />
@@ -52,6 +53,46 @@ function Hero() {
         <p className="mt-4 text-xs text-muted-foreground">
           Open source under AGPL-3.0. Self-host or use it inside Scribase.
         </p>
+      </div>
+    </section>
+  );
+}
+
+function ResendAlternative() {
+  return (
+    <section
+      id="resend-alternative"
+      className="border-y border-border bg-primary/5 py-14 sm:py-16"
+    >
+      <div className="mx-auto max-w-4xl px-6 text-center">
+        <div className="text-sm uppercase tracking-wider text-muted-foreground">
+          Looking for a Resend alternative?
+        </div>
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+          Same API, same SDKs, same price. Open source.
+        </h2>
+        <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground sm:text-base">
+          Scribase Mail matches Resend&apos;s API shape and pricing &mdash;
+          Free at 3,000 emails/month (100/day), Pro at $20/month for 50,000
+          emails with $0.90 per 1,000 extra &mdash; so migrating is a config
+          change, not a rewrite. The difference: the full source is AGPL-3.0,
+          so you can self-host it, audit it, or run it inside your own
+          Scribase project instead of trusting a closed box.
+        </p>
+        <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a
+            href={`${SCRIBASE_URL}/mail/migrate-from-resend`}
+            className="inline-flex h-10 items-center justify-center rounded-md bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+          >
+            Migrate from Resend
+          </a>
+          <Link
+            href={SOURCE_CODE_URL}
+            className="inline-flex h-10 items-center justify-center rounded-md border border-border px-5 text-sm font-medium transition-colors hover:bg-primary/10"
+          >
+            View the source (AGPL-3.0)
+          </Link>
+        </div>
       </div>
     </section>
   );
